@@ -1,0 +1,283 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  password     String
+  firstName    String?
+  lastName     String?
+  isActive     Boolean  @default(true)
+  is2faEnabled Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  memberships  OrganizationMembership[]
+  auditLogs    AuditLog[]
+  agentWallet  AgentWallet?
+  notifications Notification[]
+}
+
+model Organization {
+  id          String   @id @default(uuid())
+  name        String
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  branches    Branch[]
+  memberships OrganizationMembership[]
+}
+
+model Branch {
+  id             String   @id @default(uuid())
+  name           String
+  organizationId String
+  organization   Organization? @relation(fields: [organizationId], references: [id])
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  memberships    OrganizationMembership[]
+}
+
+model Role {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  permissions Permission[]
+  memberships OrganizationMembership[]
+}
+
+model Permission {
+  id     String @id @default(uuid())
+  action String @unique
+  roles  Role[]
+}
+
+model OrganizationMembership {
+  id             String   @id @default(uuid())
+  userId         String
+  user           User     @relation(fields: [userId], references: [id])
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  branchId       String?
+  branch         Branch?  @relation(fields: [branchId], references: [id])
+  roleId         String
+  role           Role     @relation(fields: [roleId], references: [id])
+
+  @@unique([userId, organizationId])
+}
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id])
+  action    String
+  resource  String
+  details   Json?
+  ipAddress String?
+  createdAt DateTime @default(now())
+}
+
+
+model CustomerProfile {
+  id              String   @id @default(uuid())
+  userId          String   @unique
+  passportNumber  String?
+  nationality     String?
+  dateOfBirth     DateTime?
+  contactNumber   String?
+  familyGroupId   String?
+  
+  applications    Application[]
+}
+
+model Application {
+  id              String   @id @default(uuid())
+  customerId      String
+  customer        CustomerProfile @relation(fields: [customerId], references: [id])
+  status          String   @default("DRAFT") // DRAFT, PENDING_DOCS, UNDER_REVIEW, APPROVED, REJECTED
+  routeId         String?  // Relation to Route in Phase 5
+  assignedAgentId String?
+  notes           String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  documents       Document[]
+  verificationSessions VerificationSession[]
+  bookingRequests BookingRequest[]
+  invoices        Invoice[]
+}
+
+model DocumentChecklist {
+  id          String   @id @default(uuid())
+  routeId     String
+  name        String
+  isRequired  Boolean  @default(true)
+  description String?
+}
+
+model Document {
+  id            String   @id @default(uuid())
+  applicationId String
+  application   Application @relation(fields: [applicationId], references: [id])
+  checklistId   String?
+  fileUrl       String
+  status        String   @default("PENDING") // PENDING, APPROVED, REJECTED
+  rejectionNote String?
+  version       Int      @default(1)
+  uploadedAt    DateTime @default(now())
+}
+
+model VerificationSession {
+  id              String   @id @default(uuid())
+  applicationId   String
+  application     Application @relation(fields: [applicationId], references: [id])
+  status          String   @default("PENDING") // PENDING, PASSED, FAILED, MANUAL_REVIEW
+  providerName    String   @default("MOCK_PROVIDER")
+  score           Float?
+  hasConsent      Boolean  @default(false)
+  notes           String?
+  expiresAt       DateTime
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model VisaRoute {
+  id              String   @id @default(uuid())
+  country         String
+  category        String
+  routeName       String
+  servicePackage  String
+  price           Float
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  slotJobs        SlotMonitorJob[]
+  slotAvailability SlotAvailability[]
+}
+
+model VisaCenter {
+  id              String   @id @default(uuid())
+  name            String
+  location        String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  slotJobs        SlotMonitorJob[]
+  slotAvailability SlotAvailability[]
+}
+
+model SlotMonitorJob {
+  id              String   @id @default(uuid())
+  visaRouteId     String
+  visaRoute       VisaRoute @relation(fields: [visaRouteId], references: [id])
+  visaCenterId    String
+  visaCenter      VisaCenter @relation(fields: [visaCenterId], references: [id])
+  isActive        Boolean  @default(true)
+  rateLimitConfig String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model SlotAvailability {
+  id              String   @id @default(uuid())
+  visaRouteId     String
+  visaRoute       VisaRoute @relation(fields: [visaRouteId], references: [id])
+  visaCenterId    String
+  visaCenter      VisaCenter @relation(fields: [visaCenterId], references: [id])
+  date            DateTime
+  status          String   @default("AVAILABLE") // AVAILABLE, FULL, BOOKED
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model BookingRequest {
+  id              String   @id @default(uuid())
+  applicationId   String
+  application     Application @relation(fields: [applicationId], references: [id])
+  status          String   @default("PENDING") // PENDING, PROCESSING, CONFIRMED, FAILED
+  referenceNumber String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  attempts        BookingAttempt[]
+}
+
+model BookingAttempt {
+  id              String   @id @default(uuid())
+  bookingRequestId String
+  bookingRequest   BookingRequest @relation(fields: [bookingRequestId], references: [id])
+  status          String   @default("FAILED") // SUCCESS, FAILED
+  errorMessage    String?
+  attemptedAt     DateTime @default(now())
+}
+
+model Invoice {
+  id              String   @id @default(uuid())
+  applicationId   String
+  application     Application @relation(fields: [applicationId], references: [id])
+  amount          Float
+  status          String   @default("UNPAID") // UNPAID, PAID
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  payments        Payment[]
+}
+
+model Payment {
+  id              String   @id @default(uuid())
+  invoiceId       String
+  invoice         Invoice  @relation(fields: [invoiceId], references: [id])
+  amount          Float
+  method          String   @default("CREDIT_CARD")
+  status          String   @default("SUCCESS")
+  createdAt       DateTime @default(now())
+}
+
+model AgentWallet {
+  id              String   @id @default(uuid())
+  agentId         String   @unique
+  agent           User     @relation(fields: [agentId], references: [id])
+  balance         Float    @default(0.0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  transactions    Transaction[]
+}
+
+model Transaction {
+  id              String   @id @default(uuid())
+  walletId        String
+  wallet          AgentWallet @relation(fields: [walletId], references: [id])
+  amount          Float
+  type            String   // CREDIT, DEBIT
+  description     String?
+  createdAt       DateTime @default(now())
+}
+
+model Notification {
+  id              String   @id @default(uuid())
+  userId          String
+  user            User     @relation(fields: [userId], references: [id])
+  type            String   // EMAIL, SMS
+  subject         String?
+  message         String
+  status          String   @default("SENT")
+  createdAt       DateTime @default(now())
+}
+
+model ConfiguredRoute {
+  id             String    @id @default(uuid())
+  fromCountry    String    @map("from_country")
+  toCountry      String    @map("to_country")
+  visaCenter     String    @map("visa_center")
+  visaCategory   String    @map("visa_category")
+  subCategory    String    @map("sub_category")
+  active         Boolean   @default(true)
+  scheduleDate   String?   @map("schedule_date")
+  scheduleTime   String?   @map("schedule_time")
+  status         String    @default("READY")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+}

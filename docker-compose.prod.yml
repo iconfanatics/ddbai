@@ -1,0 +1,82 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
+      POSTGRES_DB: ${DB_NAME:-visasync_prod}
+    volumes:
+      - prod_db_data:/var/lib/postgresql/data
+    restart: always
+    networks:
+      - visasync_net
+
+  redis:
+    image: redis:7-alpine
+    restart: always
+    networks:
+      - visasync_net
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-prodadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-prodpassword}
+    volumes:
+      - prod_minio_data:/data
+    restart: always
+    networks:
+      - visasync_net
+
+  backend-api:
+    image: visasync-backend:latest
+    build:
+      context: ./backend
+    environment:
+      DATABASE_URL: postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@db:5432/${DB_NAME:-visasync_prod}?schema=public
+      JWT_SECRET: ${JWT_SECRET:-supersecret_prod_key}
+      MINIO_ENDPOINT: minio
+      MINIO_PORT: 9000
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-prodadmin}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-prodpassword}
+      NODE_ENV: production
+    depends_on:
+      - db
+      - redis
+      - minio
+    restart: always
+    networks:
+      - visasync_net
+
+  # In a real app, this would be a separate worker container running the BullMQ processor
+  backend-worker:
+    image: visasync-backend:latest
+    environment:
+      DATABASE_URL: postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@db:5432/${DB_NAME:-visasync_prod}?schema=public
+      NODE_ENV: production
+    depends_on:
+      - db
+      - redis
+    restart: always
+    networks:
+      - visasync_net
+
+  frontend:
+    image: visasync-frontend:latest
+    build:
+      context: ./frontend
+    ports:
+      - "80:80"
+    restart: always
+    networks:
+      - visasync_net
+
+networks:
+  visasync_net:
+
+volumes:
+  prod_db_data:
+  prod_minio_data:
