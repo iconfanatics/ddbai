@@ -24,7 +24,7 @@ export default function Organizations() {
 
   const fetchOrgs = async () => {
     try {
-      const res = await fetch('http://localhost:3001/admin/organizations', {
+      const res = await fetch('/api/admin/organizations', {
         headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
       });
       const data = await res.json();
@@ -40,7 +40,7 @@ export default function Organizations() {
   const handleCreate = async () => {
     if (!newOrgName) return;
     try {
-      const res = await fetch('http://localhost:3001/admin/organizations', {
+      const res = await fetch('/api/admin/organizations', {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
@@ -60,7 +60,7 @@ export default function Organizations() {
 
   const handleUpdate = async () => {
     try {
-      const res = await fetch(`http://localhost:3001/admin/organizations/${editId}`, {
+      const res = await fetch(`/api/admin/organizations/${editId}`, {
         method: 'PATCH',
         headers: { 
           'Content-Type': 'application/json',
@@ -80,7 +80,7 @@ export default function Organizations() {
   const handleDelete = async (id: string) => {
     if (!confirm('Are you sure you want to delete this organization?')) return;
     try {
-      const res = await fetch(`http://localhost:3001/admin/organizations/${id}`, {
+      const res = await fetch(`/api/admin/organizations/${id}`, {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
       });

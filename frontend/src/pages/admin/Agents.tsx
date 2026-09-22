@@ -28,7 +28,7 @@ export default function Agents() {
 
   const fetchAgents = async () => {
     try {
-      const res = await fetch('http://localhost:3001/admin/agents', {
+      const res = await fetch('/api/admin/agents', {
         headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
       });
       const data = await res.json();
@@ -43,7 +43,7 @@ export default function Agents() {
 
   const fetchOrgs = async () => {
     try {
-      const res = await fetch('http://localhost:3001/admin/organizations', {
+      const res = await fetch('/api/admin/organizations', {
         headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
       });
       const data = await res.json();
@@ -58,7 +58,7 @@ export default function Agents() {
   const handleInvite = async () => {
     if (!email || !orgId) return;
     try {
-      const res = await fetch('http://localhost:3001/admin/agents/invite', {
+      const res = await fetch('/api/admin/agents/invite', {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
@@ -81,7 +81,7 @@ export default function Agents() {
 
   const handleUpdateStatus = async () => {
     try {
-      const res = await fetch(`http://localhost:3001/admin/agents/${editId}`, {
+      const res = await fetch(`/api/admin/agents/${editId}`, {
         method: 'PATCH',
         headers: { 
           'Content-Type': 'application/json',
@@ -101,7 +101,7 @@ export default function Agents() {
   const handleDelete = async (id: string) => {
     if (!confirm('Are you sure you want to delete this agent?')) return;
     try {
-      const res = await fetch(`http://localhost:3001/admin/agents/${id}`, {
+      const res = await fetch(`/api/admin/agents/${id}`, {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
       });
