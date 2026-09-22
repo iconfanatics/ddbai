@@ -54,6 +54,8 @@ services:
   # In a real app, this would be a separate worker container running the BullMQ processor
   backend-worker:
     image: visasync-backend:latest
+    build:
+      context: ./backend
     environment:
       DATABASE_URL: postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@db:5432/${DB_NAME:-visasync_prod}?schema=public
       NODE_ENV: production
