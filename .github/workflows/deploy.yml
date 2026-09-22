@@ -1,0 +1,37 @@
+name: Deploy to OVHcloud
+
+on:
+  push:
+    branches:
+      - master
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Deploy to Server via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          script: |
+            # Navigate to the project directory
+            cd /opt/visasync || (mkdir -p /opt/visasync && cd /opt/visasync)
+            
+            # If the folder is empty, clone it; otherwise pull the latest
+            if [ ! -d ".git" ]; then
+              git clone https://github.com/${{ github.repository }}.git .
+            else
+              git reset --hard
+              git pull origin ${GITHUB_REF##*/}
+            fi
+            
+            # Restart production containers
+            docker compose -f docker-compose.prod.yml down
+            docker compose -f docker-compose.prod.yml build
+            docker compose -f docker-compose.prod.yml up -d
