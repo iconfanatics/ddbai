@@ -81,35 +81,35 @@ export default function Clients() {
         <div className="grid grid-cols-5 gap-4 mb-4">
           <div>
             <label className="block text-xs text-gray-500 mb-1">From Country</label>
-            <select className="w-full border-gray-300 rounded p-2 border text-sm" value={selectedFromCountry} onChange={e => handleFromChange(e.target.value)}>
+            <select className="w-full border-gray-300 rounded p-2 border text-sm bg-white" value={selectedFromCountry} onChange={e => handleFromChange(e.target.value)}>
               <option value="">All origins</option>
               {fromCountries.map((c, i) => <option key={i} value={c}>{c}</option>)}
             </select>
           </div>
           <div>
             <label className="block text-xs text-gray-500 mb-1">To Country</label>
-            <select className="w-full border-gray-300 rounded p-2 border text-sm" value={selectedToCountry} onChange={e => handleToChange(e.target.value)} disabled={!selectedFromCountry}>
+            <select className="w-full border-gray-300 rounded p-2 border text-sm bg-white" value={selectedToCountry} onChange={e => handleToChange(e.target.value)} disabled={!selectedFromCountry}>
               <option value="">All destinations</option>
               {toCountries.map((c, i) => <option key={i} value={c}>{c}</option>)}
             </select>
           </div>
           <div>
             <label className="block text-xs text-gray-500 mb-1">Visa Center</label>
-            <select className="w-full border-gray-300 rounded p-2 border text-sm" value={selectedCenter} onChange={e => handleCenterChange(e.target.value)} disabled={!selectedToCountry}>
+            <select className="w-full border-gray-300 rounded p-2 border text-sm bg-white" value={selectedCenter} onChange={e => handleCenterChange(e.target.value)} disabled={!selectedToCountry}>
               <option value="">All visa centers</option>
               {visaCenters.map((c, i) => <option key={i} value={c}>{c}</option>)}
             </select>
           </div>
           <div>
             <label className="block text-xs text-gray-500 mb-1">Visa Category</label>
-            <select className="w-full border-gray-300 rounded p-2 border text-sm" value={selectedCategory} onChange={e => handleCategoryChange(e.target.value)} disabled={!selectedCenter}>
+            <select className="w-full border-gray-300 rounded p-2 border text-sm bg-white" value={selectedCategory} onChange={e => handleCategoryChange(e.target.value)} disabled={!selectedCenter}>
               <option value="">All categories</option>
               {categories.map((c, i) => <option key={i} value={c}>{c}</option>)}
             </select>
           </div>
           <div>
             <label className="block text-xs text-gray-500 mb-1">Sub Category</label>
-            <select className="w-full border-gray-300 rounded p-2 border text-sm" value={selectedSubCategory} onChange={e => setSelectedSubCategory(e.target.value)} disabled={!selectedCategory}>
+            <select className="w-full border-gray-300 rounded p-2 border text-sm bg-white" value={selectedSubCategory} onChange={e => setSelectedSubCategory(e.target.value)} disabled={!selectedCategory}>
               <option value="">All sub categories</option>
               {subCategories.map((c, i) => <option key={i} value={c}>{c}</option>)}
             </select>
@@ -119,27 +119,27 @@ export default function Clients() {
         <div className="grid grid-cols-6 gap-4 mb-6">
           <div>
             <label className="block text-xs text-gray-500 mb-1">User</label>
-            <select className="w-full border-gray-300 rounded p-2 border text-sm"><option>All users</option></select>
+            <select className="w-full border-gray-300 rounded p-2 border text-sm bg-white"><option>All users</option><option>Nirupam Nirupam</option><option>Sany Sany</option></select>
           </div>
           <div>
             <label className="block text-xs text-gray-500 mb-1">Status</label>
-            <select className="w-full border-gray-300 rounded p-2 border text-sm"><option>All statuses</option></select>
+            <select className="w-full border-gray-300 rounded p-2 border text-sm bg-white"><option>All statuses</option><option>Face Verification Pending</option><option>Processing</option><option>Completed</option></select>
           </div>
           <div>
             <label className="block text-xs text-gray-500 mb-1">Pause State</label>
-            <select className="w-full border-gray-300 rounded p-2 border text-sm"><option>All</option></select>
+            <select className="w-full border-gray-300 rounded p-2 border text-sm bg-white"><option>All</option><option>Yes</option><option>No</option></select>
           </div>
           <div>
             <label className="block text-xs text-gray-500 mb-1">Face Verification</label>
-            <select className="w-full border-gray-300 rounded p-2 border text-sm"><option>All</option></select>
+            <select className="w-full border-gray-300 rounded p-2 border text-sm bg-white"><option>All</option><option>Yes</option><option>No</option></select>
           </div>
           <div>
             <label className="block text-xs text-gray-500 mb-1">PDF Available</label>
-            <select className="w-full border-gray-300 rounded p-2 border text-sm"><option>All</option></select>
+            <select className="w-full border-gray-300 rounded p-2 border text-sm bg-white"><option>All</option><option>Yes</option><option>No</option></select>
           </div>
           <div>
             <label className="block text-xs text-gray-500 mb-1">Transaction ID</label>
-            <input type="text" placeholder="All" className="w-full border-gray-300 rounded p-2 border text-sm" />
+            <input type="text" placeholder="All" className="w-full border-gray-300 rounded p-2 border text-sm bg-white" />
           </div>
         </div>
 
@@ -149,19 +149,19 @@ export default function Clients() {
           <div className="grid grid-cols-4 gap-4 mb-4">
             <div>
               <label className="block text-xs text-gray-500 mb-1">Applicant Name</label>
-              <input type="text" placeholder="Search by name..." className="w-full border-gray-300 rounded p-2 border text-sm" />
+              <input type="text" placeholder="Search by name..." className="w-full border-gray-300 rounded p-2 border text-sm bg-white" />
             </div>
             <div>
               <label className="block text-xs text-gray-500 mb-1">Passport Number</label>
-              <input type="text" placeholder="Search by passport..." className="w-full border-gray-300 rounded p-2 border text-sm" />
+              <input type="text" placeholder="Search by passport..." className="w-full border-gray-300 rounded p-2 border text-sm bg-white" />
             </div>
             <div>
               <label className="block text-xs text-gray-500 mb-1">Reference Number</label>
-              <input type="text" placeholder="Search by reference..." className="w-full border-gray-300 rounded p-2 border text-sm" />
+              <input type="text" placeholder="Search by reference..." className="w-full border-gray-300 rounded p-2 border text-sm bg-white" />
             </div>
             <div>
               <label className="block text-xs text-gray-500 mb-1">URN</label>
-              <input type="text" placeholder="Search by URN..." className="w-full border-gray-300 rounded p-2 border text-sm" />
+              <input type="text" placeholder="Search by URN..." className="w-full border-gray-300 rounded p-2 border text-sm bg-white" />
             </div>
           </div>
         </div>
@@ -172,11 +172,11 @@ export default function Clients() {
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-xs text-gray-500 mb-1">Date From</label>
-              <input type="date" className="w-full border-gray-300 rounded p-2 border text-sm" />
+              <input type="date" className="w-full border-gray-300 rounded p-2 border text-sm bg-white" />
             </div>
             <div>
               <label className="block text-xs text-gray-500 mb-1">Date To</label>
-              <input type="date" className="w-full border-gray-300 rounded p-2 border text-sm" />
+              <input type="date" className="w-full border-gray-300 rounded p-2 border text-sm bg-white" />
             </div>
           </div>
         </div>
