@@ -4,12 +4,30 @@ import { VISA_ROUTE_MASTER } from '../../data/visaRouteMaster';
 export default function Clients() {
   const [showAddClient, setShowAddClient] = useState(false);
   
-  // Cascading states
+  // Cascading states (Row 1)
   const [selectedFromCountry, setSelectedFromCountry] = useState("");
   const [selectedToCountry, setSelectedToCountry] = useState("");
   const [selectedCenter, setSelectedCenter] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("");
   const [selectedSubCategory, setSelectedSubCategory] = useState("");
+
+  // Row 2 filter states
+  const [selectedUser, setSelectedUser] = useState("");
+  const [selectedStatus, setSelectedStatus] = useState("");
+  const [selectedPauseState, setSelectedPauseState] = useState("");
+  const [selectedFaceVerification, setSelectedFaceVerification] = useState("");
+  const [selectedPdfAvailable, setSelectedPdfAvailable] = useState("");
+  const [transactionId, setTransactionId] = useState("");
+
+  // Applicant filter states
+  const [applicantName, setApplicantName] = useState("");
+  const [passportNumber, setPassportNumber] = useState("");
+  const [referenceNumber, setReferenceNumber] = useState("");
+  const [urn, setUrn] = useState("");
+
+  // Date filter states
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
 
   // Derived options based on selections
   const fromCountries = useMemo(() => VISA_ROUTE_MASTER.map(c => c.name), []);
@@ -48,6 +66,15 @@ export default function Clients() {
   const handleCenterChange = (val: string) => { setSelectedCenter(val); setSelectedCategory(""); setSelectedSubCategory(""); };
   const handleCategoryChange = (val: string) => { setSelectedCategory(val); setSelectedSubCategory(""); };
 
+  const clearAllFilters = () => {
+    setSelectedFromCountry(""); setSelectedToCountry(""); setSelectedCenter("");
+    setSelectedCategory(""); setSelectedSubCategory("");
+    setSelectedUser(""); setSelectedStatus(""); setSelectedPauseState("");
+    setSelectedFaceVerification(""); setSelectedPdfAvailable(""); setTransactionId("");
+    setApplicantName(""); setPassportNumber(""); setReferenceNumber(""); setUrn("");
+    setDateFrom(""); setDateTo("");
+  };
+
   return (
     <div className="p-6 bg-white min-h-screen text-gray-800 text-sm">
       {/* Header */}
@@ -72,9 +99,17 @@ export default function Clients() {
 
       {/* Filters Section */}
       <div className="bg-white border border-gray-200 rounded-lg p-5 mb-6 shadow-sm">
-        <div className="flex items-center text-gray-700 font-medium mb-4">
-          <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"></path></svg>
-          Filters
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center text-gray-700 font-medium">
+            <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"></path></svg>
+            Filters
+          </div>
+          <button
+            onClick={clearAllFilters}
+            className="text-xs text-gray-500 hover:text-red-500 border border-gray-300 hover:border-red-300 px-3 py-1 rounded bg-white hover:bg-red-50 transition-colors font-medium"
+          >
+            ✕ Clear All Filters
+          </button>
         </div>
 
         {/* Row 1 */}
@@ -119,27 +154,27 @@ export default function Clients() {
         <div className="grid grid-cols-6 gap-4 mb-6">
           <div>
             <label className="block text-xs text-gray-500 mb-1">User</label>
-            <select className="w-full border-gray-300 rounded p-2 border text-sm bg-white"><option>All users</option><option>Nirupam Nirupam</option><option>Sany Sany</option></select>
+            <select className="w-full border-gray-300 rounded p-2 border text-sm bg-white" value={selectedUser} onChange={e => setSelectedUser(e.target.value)}><option value="">All users</option><option value="Nirupam Nirupam">Nirupam Nirupam</option><option value="Sany Sany">Sany Sany</option></select>
           </div>
           <div>
             <label className="block text-xs text-gray-500 mb-1">Status</label>
-            <select className="w-full border-gray-300 rounded p-2 border text-sm bg-white"><option>All statuses</option><option>Face Verification Pending</option><option>Processing</option><option>Completed</option></select>
+            <select className="w-full border-gray-300 rounded p-2 border text-sm bg-white" value={selectedStatus} onChange={e => setSelectedStatus(e.target.value)}><option value="">All statuses</option><option value="Face Verification Pending">Face Verification Pending</option><option value="Processing">Processing</option><option value="Completed">Completed</option></select>
           </div>
           <div>
             <label className="block text-xs text-gray-500 mb-1">Pause State</label>
-            <select className="w-full border-gray-300 rounded p-2 border text-sm bg-white"><option>All</option><option>Yes</option><option>No</option></select>
+            <select className="w-full border-gray-300 rounded p-2 border text-sm bg-white" value={selectedPauseState} onChange={e => setSelectedPauseState(e.target.value)}><option value="">All</option><option value="Yes">Yes</option><option value="No">No</option></select>
           </div>
           <div>
             <label className="block text-xs text-gray-500 mb-1">Face Verification</label>
-            <select className="w-full border-gray-300 rounded p-2 border text-sm bg-white"><option>All</option><option>Yes</option><option>No</option></select>
+            <select className="w-full border-gray-300 rounded p-2 border text-sm bg-white" value={selectedFaceVerification} onChange={e => setSelectedFaceVerification(e.target.value)}><option value="">All</option><option value="Yes">Yes</option><option value="No">No</option></select>
           </div>
           <div>
             <label className="block text-xs text-gray-500 mb-1">PDF Available</label>
-            <select className="w-full border-gray-300 rounded p-2 border text-sm bg-white"><option>All</option><option>Yes</option><option>No</option></select>
+            <select className="w-full border-gray-300 rounded p-2 border text-sm bg-white" value={selectedPdfAvailable} onChange={e => setSelectedPdfAvailable(e.target.value)}><option value="">All</option><option value="Yes">Yes</option><option value="No">No</option></select>
           </div>
           <div>
             <label className="block text-xs text-gray-500 mb-1">Transaction ID</label>
-            <input type="text" placeholder="All" className="w-full border-gray-300 rounded p-2 border text-sm bg-white" />
+            <input type="text" placeholder="All" className="w-full border-gray-300 rounded p-2 border text-sm bg-white" value={transactionId} onChange={e => setTransactionId(e.target.value)} />
           </div>
         </div>
 
@@ -149,19 +184,19 @@ export default function Clients() {
           <div className="grid grid-cols-4 gap-4 mb-4">
             <div>
               <label className="block text-xs text-gray-500 mb-1">Applicant Name</label>
-              <input type="text" placeholder="Search by name..." className="w-full border-gray-300 rounded p-2 border text-sm bg-white" />
+              <input type="text" placeholder="Search by name..." className="w-full border-gray-300 rounded p-2 border text-sm bg-white" value={applicantName} onChange={e => setApplicantName(e.target.value)} />
             </div>
             <div>
               <label className="block text-xs text-gray-500 mb-1">Passport Number</label>
-              <input type="text" placeholder="Search by passport..." className="w-full border-gray-300 rounded p-2 border text-sm bg-white" />
+              <input type="text" placeholder="Search by passport..." className="w-full border-gray-300 rounded p-2 border text-sm bg-white" value={passportNumber} onChange={e => setPassportNumber(e.target.value)} />
             </div>
             <div>
               <label className="block text-xs text-gray-500 mb-1">Reference Number</label>
-              <input type="text" placeholder="Search by reference..." className="w-full border-gray-300 rounded p-2 border text-sm bg-white" />
+              <input type="text" placeholder="Search by reference..." className="w-full border-gray-300 rounded p-2 border text-sm bg-white" value={referenceNumber} onChange={e => setReferenceNumber(e.target.value)} />
             </div>
             <div>
               <label className="block text-xs text-gray-500 mb-1">URN</label>
-              <input type="text" placeholder="Search by URN..." className="w-full border-gray-300 rounded p-2 border text-sm bg-white" />
+              <input type="text" placeholder="Search by URN..." className="w-full border-gray-300 rounded p-2 border text-sm bg-white" value={urn} onChange={e => setUrn(e.target.value)} />
             </div>
           </div>
         </div>
@@ -172,11 +207,11 @@ export default function Clients() {
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-xs text-gray-500 mb-1">Date From</label>
-              <input type="date" className="w-full border-gray-300 rounded p-2 border text-sm bg-white" />
+              <input type="date" className="w-full border-gray-300 rounded p-2 border text-sm bg-white" value={dateFrom} onChange={e => setDateFrom(e.target.value)} />
             </div>
             <div>
               <label className="block text-xs text-gray-500 mb-1">Date To</label>
-              <input type="date" className="w-full border-gray-300 rounded p-2 border text-sm bg-white" />
+              <input type="date" className="w-full border-gray-300 rounded p-2 border text-sm bg-white" value={dateTo} onChange={e => setDateTo(e.target.value)} />
             </div>
           </div>
         </div>
