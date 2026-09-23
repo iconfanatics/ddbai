@@ -89,9 +89,17 @@ model CustomerProfile {
   id              String   @id @default(uuid())
   userId          String   @unique
   passportNumber  String?  @unique
+  passportExpiry  DateTime?
   nationality     String?
   dateOfBirth     DateTime?
+  gender          String?
+  gapDays         Int?
   contactNumber   String?
+  addressLine1    String?
+  addressLine2    String?
+  postalCode      String?
+  city            String?
+  state           String?
   familyGroupId   String?
   
   applications    Application[]
@@ -103,6 +111,9 @@ model Application {
   customer        CustomerProfile @relation(fields: [customerId], references: [id])
   status          String   @default("DRAFT") // DRAFT, PENDING_DOCS, UNDER_REVIEW, APPROVED, REJECTED
   routeId         String?  // Relation to Route in Phase 5
+  applicationCenter String?
+  category          String?
+  subCategory       String?
   assignedAgentId String?
   notes           String?
   createdAt       DateTime @default(now())

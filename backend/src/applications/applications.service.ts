@@ -23,50 +23,71 @@ export class ApplicationsService {
     }
   }
 
-  /** Create a client — enforces uniqueness at the backend inside a transaction
+  /** Create a client (or multiple applicants) — enforces uniqueness at the backend inside a transaction
    *  so two concurrent requests for the same passport cannot both succeed.
    */
-  async createClient(data: { passportNumber: string; targetCountry: string; fromCountry?: string }) {
-    const normalized = data.passportNumber.trim().toUpperCase();
-
+  async createClient(data: any) {
     return this.prisma.$transaction(async (tx) => {
-      // Re-check inside transaction — protects against concurrent duplicate creation
-      const existing = await tx.customerProfile.findUnique({
-        where: { passportNumber: normalized },
-      });
-      if (existing) {
-        throw new ConflictException('This passport is already registered and cannot be added again.');
+      const familyGroupId = data.applicants.length > 1 ? crypto.randomUUID() : null;
+      const results = [];
+
+      for (const app of data.applicants) {
+        if (!app.passportNumber) continue;
+        const normalized = app.passportNumber.trim().toUpperCase();
+
+        // Re-check inside transaction — protects against concurrent duplicate creation
+        const existing = await tx.customerProfile.findUnique({
+          where: { passportNumber: normalized },
+        });
+        if (existing) {
+          throw new ConflictException(`Passport ${normalized} is already registered.`);
+        }
+
+        // Create system user for this client
+        const clientUser = await tx.user.create({
+          data: {
+            email: `client_${normalized.toLowerCase()}_${Date.now()}@system.local`,
+            password: 'N/A',
+            firstName: app.firstName || normalized,
+            lastName: app.lastName || 'Client',
+          },
+        });
+
+        // Create CustomerProfile with normalized passport and all details
+        const profile = await tx.customerProfile.create({
+          data: {
+            userId: clientUser.id,
+            passportNumber: normalized,
+            nationality: app.nationality || data.fromCountry || null,
+            passportExpiry: app.passportExpiry ? new Date(app.passportExpiry) : null,
+            dateOfBirth: app.dateOfBirth ? new Date(app.dateOfBirth) : null,
+            gender: app.gender || null,
+            gapDays: app.gapDays ? parseInt(app.gapDays, 10) : null,
+            addressLine1: app.addressLine1 || null,
+            addressLine2: app.addressLine2 || null,
+            postalCode: app.postalCode || null,
+            city: app.city || null,
+            state: app.state || null,
+            familyGroupId,
+          },
+        });
+
+        // Create initial application with configuration
+        const application = await tx.application.create({
+          data: {
+            customerId: profile.id,
+            status: 'DRAFT',
+            notes: `Target: ${data.targetCountry}`,
+            applicationCenter: data.applicationCenter || null,
+            category: data.category || null,
+            subCategory: data.subCategory || null,
+          },
+        });
+
+        results.push({ profile, application });
       }
 
-      // Create system user for this client
-      const clientUser = await tx.user.create({
-        data: {
-          email: `client_${normalized.toLowerCase()}_${Date.now()}@system.local`,
-          password: 'N/A',
-          firstName: normalized,
-          lastName: 'Client',
-        },
-      });
-
-      // Create CustomerProfile with normalized passport
-      const profile = await tx.customerProfile.create({
-        data: {
-          userId: clientUser.id,
-          passportNumber: normalized,
-          nationality: data.fromCountry || null,
-        },
-      });
-
-      // Create initial application
-      const application = await tx.application.create({
-        data: {
-          customerId: profile.id,
-          status: 'DRAFT',
-          notes: `Target: ${data.targetCountry}`,
-        },
-      });
-
-      return { profile, application, message: 'Client created successfully' };
+      return { results, message: 'Client(s) created successfully' };
     });
   }
 

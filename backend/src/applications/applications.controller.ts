@@ -16,11 +16,15 @@ export class ApplicationsController {
     return this.applicationsService.checkPassport(passport.trim().toUpperCase());
   }
 
-  /** Create a new client with server-side duplicate guard */
+  /** Create a new client (or multiple applicants) with server-side duplicate guard */
   @Post('create-client')
-  async createClient(@Body() body: { passportNumber: string; targetCountry: string; fromCountry?: string }) {
-    if (!body.passportNumber || !body.targetCountry) {
-      throw new BadRequestException('passportNumber and targetCountry are required');
+  async createClient(@Body() body: any) {
+    if (!body.targetCountry || !body.applicants || !Array.isArray(body.applicants) || body.applicants.length === 0) {
+      throw new BadRequestException('targetCountry and at least one applicant are required');
+    }
+    // Basic validation for the first applicant's passport (since it's the primary one used in Step 1)
+    if (!body.applicants[0].passportNumber) {
+      throw new BadRequestException('Primary applicant must have a passport number');
     }
     return this.applicationsService.createClient(body);
   }
