@@ -33,7 +33,6 @@ export default function BookingQueue() {
   const paginated = bookings.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE);
 
   // Status mappings
-  const bookedCount = bookings.filter(b => b.status === 'CONFIRMED' || b.status === 'PROCESSING').length;
   const successCount = bookings.filter(b => b.status === 'CONFIRMED').length;
   const pdfCount = bookings.filter(b => b.status === 'CONFIRMED').length; // Mock: PDF ready if confirmed
 

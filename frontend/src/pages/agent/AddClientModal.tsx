@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { VISA_ROUTE_MASTER } from '../../data/visaRouteMaster';
 
 type PassportState = 'initial' | 'searching' | 'available' | 'already_added' | 'error' | 'cleared';
