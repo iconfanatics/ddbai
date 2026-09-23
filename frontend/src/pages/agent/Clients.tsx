@@ -330,7 +330,10 @@ function AddClientModal({
   const canCreate = passportState === 'available' && targetCountry.trim() !== '';
 
   const handleSearch = async () => {
-    if (!passport.trim()) return;
+    if (!passport.trim()) {
+      setErrorMsg('Please enter Passport Number.');
+      return;
+    }
     setPassportState('searching');
     setErrorMsg('');
     try {
@@ -340,10 +343,11 @@ function AddClientModal({
       });
       if (!res.ok) throw new Error('API error');
       const data = await res.json();
+      if (data.status === 'ERROR') throw new Error(data.message || 'Error');
       setPassportState(data.available ? 'available' : 'already_added');
     } catch {
       setPassportState('error');
-      setErrorMsg('Search failed. Please try again.');
+      setErrorMsg('Unable to check passport. Please try again.');
     }
   };
 
@@ -358,6 +362,7 @@ function AddClientModal({
   const handleCreate = async () => {
     if (!canCreate) return;
     setSubmitting(true);
+    setErrorMsg('');
     try {
       const token = localStorage.getItem('token');
       const res = await fetch('/api/applications/create-client', {
@@ -371,6 +376,7 @@ function AddClientModal({
       });
       if (res.status === 409) {
         setPassportState('already_added');
+        setErrorMsg('This passport is already registered and cannot be added again.');
         setSubmitting(false);
         return;
       }
@@ -433,20 +439,20 @@ function AddClientModal({
             {passportState === 'searching' && (
               <p className="mt-2 text-xs text-gray-500 flex items-center gap-1">
                 <span className="inline-block w-3 h-3 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></span>
-                Checking across all agents...
+                Checking passport...
               </p>
             )}
             {passportState === 'available' && (
               <p className="mt-2 text-xs font-semibold text-green-600 flex items-center gap-1">
-                <span>✓</span> Passport Available — you may proceed
+                <span>✓</span> Passport Available
               </p>
             )}
             {passportState === 'already_added' && (
               <p className="mt-2 text-xs font-semibold text-red-600 flex items-center gap-1">
-                <span>✗</span> Already Added — this passport exists in the system
+                <span>✗</span> Already Added
               </p>
             )}
-            {passportState === 'error' && (
+            {(passportState === 'error' || errorMsg) && passportState !== 'already_added' && (
               <p className="mt-2 text-xs font-semibold text-orange-600">{errorMsg || 'Search failed. Please try again.'}</p>
             )}
           </div>

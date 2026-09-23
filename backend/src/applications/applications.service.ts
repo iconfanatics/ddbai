@@ -5,56 +5,69 @@ import { PrismaService } from '../prisma/prisma.service.js';
 export class ApplicationsService {
   constructor(private prisma: PrismaService) {}
 
-  /** Global passport check — searches ALL CustomerProfiles across all agents */
+  /** Global passport check — searches ALL CustomerProfiles across all agents.
+   *  Normalizes the passport number (uppercase + trim) before comparison.
+   */
   async checkPassport(passportNumber: string) {
-    const existing = await this.prisma.customerProfile.findUnique({
-      where: { passportNumber },
-    });
-    if (existing) {
-      return { available: false, message: 'Already Added' };
+    const normalized = passportNumber.trim().toUpperCase();
+    try {
+      const existing = await this.prisma.customerProfile.findUnique({
+        where: { passportNumber: normalized },
+      });
+      if (existing) {
+        return { available: false, status: 'ALREADY_ADDED' };
+      }
+      return { available: true, status: 'AVAILABLE' };
+    } catch {
+      return { success: false, status: 'ERROR', message: 'Unable to check passport' };
     }
-    return { available: true, message: 'Passport Available' };
   }
 
-  /** Create a client — also enforces uniqueness at the backend */
+  /** Create a client — enforces uniqueness at the backend inside a transaction
+   *  so two concurrent requests for the same passport cannot both succeed.
+   */
   async createClient(data: { passportNumber: string; targetCountry: string; fromCountry?: string }) {
-    // Server-side duplicate check (protects against race conditions)
-    const existing = await this.prisma.customerProfile.findUnique({
-      where: { passportNumber: data.passportNumber.toUpperCase() },
-    });
-    if (existing) {
-      throw new ConflictException('A client with this passport number already exists');
-    }
+    const normalized = data.passportNumber.trim().toUpperCase();
 
-    // Create a system user record for this client
-    const clientUser = await this.prisma.user.create({
-      data: {
-        email: `client_${data.passportNumber.toLowerCase()}_${Date.now()}@system.local`,
-        password: 'N/A', // system-managed, no login
-        firstName: data.passportNumber.toUpperCase(),
-        lastName: 'Client',
-      },
-    });
+    return this.prisma.$transaction(async (tx) => {
+      // Re-check inside transaction — protects against concurrent duplicate creation
+      const existing = await tx.customerProfile.findUnique({
+        where: { passportNumber: normalized },
+      });
+      if (existing) {
+        throw new ConflictException('This passport is already registered and cannot be added again.');
+      }
 
-    // Create the CustomerProfile with passport
-    const profile = await this.prisma.customerProfile.create({
-      data: {
-        userId: clientUser.id,
-        passportNumber: data.passportNumber.toUpperCase(),
-        nationality: data.fromCountry || null,
-      },
-    });
+      // Create system user for this client
+      const clientUser = await tx.user.create({
+        data: {
+          email: `client_${normalized.toLowerCase()}_${Date.now()}@system.local`,
+          password: 'N/A',
+          firstName: normalized,
+          lastName: 'Client',
+        },
+      });
 
-    // Create an initial application
-    const application = await this.prisma.application.create({
-      data: {
-        customerId: profile.id,
-        status: 'DRAFT',
-        notes: `Target: ${data.targetCountry}`,
-      },
-    });
+      // Create CustomerProfile with normalized passport
+      const profile = await tx.customerProfile.create({
+        data: {
+          userId: clientUser.id,
+          passportNumber: normalized,
+          nationality: data.fromCountry || null,
+        },
+      });
 
-    return { profile, application, message: 'Client created successfully' };
+      // Create initial application
+      const application = await tx.application.create({
+        data: {
+          customerId: profile.id,
+          status: 'DRAFT',
+          notes: `Target: ${data.targetCountry}`,
+        },
+      });
+
+      return { profile, application, message: 'Client created successfully' };
+    });
   }
 
   async create(data: { customerId: string, routeId?: string }) {
