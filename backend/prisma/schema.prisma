@@ -22,6 +22,7 @@ model User {
   auditLogs    AuditLog[]
   agentWallet  AgentWallet?
   notifications Notification[]
+  customerProfile CustomerProfile?
 }
 
 model Organization {
@@ -88,6 +89,7 @@ model AuditLog {
 model CustomerProfile {
   id              String   @id @default(uuid())
   userId          String   @unique
+  user            User     @relation(fields: [userId], references: [id])
   passportNumber  String?  @unique
   passportExpiry  DateTime?
   nationality     String?
