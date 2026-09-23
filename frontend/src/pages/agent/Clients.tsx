@@ -470,7 +470,7 @@ function AddClientModal({
                 <option key={i} value={c}>{c}</option>
               ))}
             </select>
-            {!canSelectCountry && passportState !== 'available' && (
+            {!canSelectCountry && (
               <p className="mt-1 text-xs text-gray-400">Search passport first to enable country selection</p>
             )}
           </div>
