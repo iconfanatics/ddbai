@@ -35,8 +35,19 @@ export class BookingsService implements OnModuleInit {
 
   async getQueue() {
     return this.prisma.bookingRequest.findMany({
-      include: { application: true, attempts: true },
-      orderBy: { createdAt: 'asc' }
+      include: {
+        application: {
+          include: {
+            customer: {
+              include: {
+                user: true
+              }
+            }
+          }
+        },
+        attempts: true
+      },
+      orderBy: { createdAt: 'desc' }
     });
   }
 
