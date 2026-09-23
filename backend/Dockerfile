@@ -1,4 +1,4 @@
-FROM node:22-slim AS builder
+FROM public.ecr.aws/docker/library/node:22-slim AS builder
 WORKDIR /app
 RUN apt-get update && apt-get install -y openssl
 COPY package.json yarn.lock* ./
@@ -7,7 +7,7 @@ COPY . .
 RUN npx prisma generate
 RUN yarn build
 
-FROM node:22-slim
+FROM public.ecr.aws/docker/library/node:22-slim
 WORKDIR /app
 RUN apt-get update && apt-get install -y openssl
 COPY --from=builder /app/node_modules ./node_modules
