@@ -92,7 +92,7 @@ export function AddClientModal({
     if (!canProceedToStep2) return;
     if (applicants.length === 0) {
       setApplicants([{
-        id: crypto.randomUUID(),
+        id: Math.random().toString(36).substring(2, 9),
         firstName: '', lastName: '', nationality: prefilledFromCountry || '',
         passportNumber: passport.trim().toUpperCase(),
         passportExpiry: '', dateOfBirth: '', gender: '', gapDays: '',
@@ -104,7 +104,7 @@ export function AddClientModal({
 
   const addApplicant = () => {
     setApplicants([...applicants, {
-      id: crypto.randomUUID(),
+      id: Math.random().toString(36).substring(2, 9),
       firstName: '', lastName: '', nationality: prefilledFromCountry || '',
       passportNumber: '', passportExpiry: '', dateOfBirth: '', gender: '', gapDays: '',
       addressLine1: '', addressLine2: '', postalCode: '', city: '', state: ''
