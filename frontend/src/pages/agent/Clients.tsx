@@ -83,35 +83,35 @@ export default function Clients() {
             <label className="block text-xs text-gray-500 mb-1">From Country</label>
             <select className="w-full border-gray-300 rounded p-2 border text-sm" value={selectedFromCountry} onChange={e => handleFromChange(e.target.value)}>
               <option value="">All origins</option>
-              {fromCountries.map(c => <option key={c} value={c}>{c}</option>)}
+              {fromCountries.map((c, i) => <option key={i} value={c}>{c}</option>)}
             </select>
           </div>
           <div>
             <label className="block text-xs text-gray-500 mb-1">To Country</label>
             <select className="w-full border-gray-300 rounded p-2 border text-sm" value={selectedToCountry} onChange={e => handleToChange(e.target.value)} disabled={!selectedFromCountry}>
               <option value="">All destinations</option>
-              {toCountries.map(c => <option key={c} value={c}>{c}</option>)}
+              {toCountries.map((c, i) => <option key={i} value={c}>{c}</option>)}
             </select>
           </div>
           <div>
             <label className="block text-xs text-gray-500 mb-1">Visa Center</label>
             <select className="w-full border-gray-300 rounded p-2 border text-sm" value={selectedCenter} onChange={e => handleCenterChange(e.target.value)} disabled={!selectedToCountry}>
               <option value="">All visa centers</option>
-              {visaCenters.map(c => <option key={c} value={c}>{c}</option>)}
+              {visaCenters.map((c, i) => <option key={i} value={c}>{c}</option>)}
             </select>
           </div>
           <div>
             <label className="block text-xs text-gray-500 mb-1">Visa Category</label>
             <select className="w-full border-gray-300 rounded p-2 border text-sm" value={selectedCategory} onChange={e => handleCategoryChange(e.target.value)} disabled={!selectedCenter}>
               <option value="">All categories</option>
-              {categories.map(c => <option key={c} value={c}>{c}</option>)}
+              {categories.map((c, i) => <option key={i} value={c}>{c}</option>)}
             </select>
           </div>
           <div>
             <label className="block text-xs text-gray-500 mb-1">Sub Category</label>
             <select className="w-full border-gray-300 rounded p-2 border text-sm" value={selectedSubCategory} onChange={e => setSelectedSubCategory(e.target.value)} disabled={!selectedCategory}>
               <option value="">All sub categories</option>
-              {subCategories.map(c => <option key={c} value={c}>{c}</option>)}
+              {subCategories.map((c, i) => <option key={i} value={c}>{c}</option>)}
             </select>
           </div>
         </div>
