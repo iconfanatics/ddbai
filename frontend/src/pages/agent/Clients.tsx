@@ -1,9 +1,36 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { VISA_ROUTE_MASTER } from '../../data/visaRouteMaster';
 import { AddClientModal } from './AddClientModal';
 
 export default function Clients() {
   const [showAddClient, setShowAddClient] = useState(false);
+  const [clients, setClients] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetchClients = async () => {
+    setLoading(true);
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch('/api/applications', { headers: { Authorization: `Bearer ${token}` } });
+      if (res.ok) {
+        const data = await res.json();
+        setClients(data);
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchClients();
+  }, []);
+
+  const handleModalClose = () => {
+    setShowAddClient(false);
+    fetchClients();
+  };
   
   // Cascading states (Row 1)
   const [selectedFromCountry, setSelectedFromCountry] = useState("");
@@ -243,59 +270,48 @@ export default function Clients() {
             </tr>
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
-            {/* Dummy Row 1 */}
-            <tr className="hover:bg-gray-50">
-              <td className="px-6 py-4 whitespace-nowrap"><input type="checkbox" className="rounded text-blue-600" /></td>
-              <td className="px-6 py-4">
-                <div className="flex flex-col">
-                  <span className="text-blue-600 text-xs font-semibold">1 applicant</span>
-                  <span className="text-gray-900 font-medium uppercase text-xs mt-1">BELARMINO LOURENCO DOMINGOS TONGA</span>
-                </div>
-              </td>
-              <td className="px-6 py-4 text-gray-700 font-medium">Nirupam Nirupam</td>
-              <td className="px-6 py-4 text-xs text-gray-500">
-                <div className="font-semibold text-gray-700">Center: Portugal Visa Application Center-Luanda</div>
-                <div>Category: Visto Nacional</div>
-                <div>Sub-Category: Visto Nacional (National visa)</div>
-              </td>
-              <td className="px-6 py-4 whitespace-nowrap">
-                <span className="px-2 py-1 bg-yellow-100 text-yellow-800 text-xs font-semibold rounded mr-2">Face Verification Pending</span>
-                <span className="px-2 py-1 bg-blue-100 text-blue-800 text-xs font-semibold rounded">Processing</span>
-              </td>
-              <td className="px-6 py-4 text-gray-500">N/A</td>
-              <td className="px-6 py-4 text-gray-400 text-xs italic">Add note...</td>
-              <td className="px-6 py-4 text-center text-gray-400">...</td>
-            </tr>
-            {/* Dummy Row 2 */}
-            <tr className="hover:bg-gray-50">
-              <td className="px-6 py-4 whitespace-nowrap"><input type="checkbox" className="rounded text-blue-600" /></td>
-              <td className="px-6 py-4">
-                <div className="flex flex-col">
-                  <span className="text-blue-600 text-xs font-semibold">1 applicant</span>
-                  <span className="text-gray-900 font-medium uppercase text-xs mt-1">MARCELINA ANTONIO DOMINGOS</span>
-                </div>
-              </td>
-              <td className="px-6 py-4 text-gray-700 font-medium">Nirupam Nirupam</td>
-              <td className="px-6 py-4 text-xs text-gray-500">
-                <div className="font-semibold text-gray-700">Center: Portugal Visa Application Center-Luanda</div>
-                <div>Category: Visto Nacional</div>
-                <div>Sub-Category: Visto Nacional (National visa)</div>
-              </td>
-              <td className="px-6 py-4 whitespace-nowrap">
-                <span className="px-2 py-1 bg-yellow-100 text-yellow-800 text-xs font-semibold rounded mr-2">Face Verification Pending</span>
-                <span className="px-2 py-1 bg-blue-100 text-blue-800 text-xs font-semibold rounded">Processing</span>
-              </td>
-              <td className="px-6 py-4 text-gray-500">N/A</td>
-              <td className="px-6 py-4 text-gray-400 text-xs italic">Add note...</td>
-              <td className="px-6 py-4 text-center text-gray-400">...</td>
-            </tr>
+            {loading ? (
+              <tr><td colSpan={8} className="px-6 py-8 text-center text-gray-500">Loading clients...</td></tr>
+            ) : clients.length === 0 ? (
+              <tr><td colSpan={8} className="px-6 py-8 text-center text-gray-500">No clients found. Click "+ Add Client" to create one.</td></tr>
+            ) : clients.map((app: any) => (
+              <tr key={app.id} className="hover:bg-gray-50">
+                <td className="px-6 py-4 whitespace-nowrap"><input type="checkbox" className="rounded text-blue-600" /></td>
+                <td className="px-6 py-4">
+                  <div className="flex flex-col">
+                    <span className="text-blue-600 text-xs font-semibold">1 applicant</span>
+                    <span className="text-gray-900 font-medium uppercase text-xs mt-1">
+                      {app.customer?.user?.firstName || 'UNKNOWN'} {app.customer?.user?.lastName || ''}
+                    </span>
+                  </div>
+                </td>
+                <td className="px-6 py-4 text-gray-700 font-medium">System (API)</td>
+                <td className="px-6 py-4 text-xs text-gray-500">
+                  <div className="font-semibold text-gray-700">Center: {app.applicationCenter || 'N/A'}</div>
+                  <div>Category: {app.category || 'N/A'}</div>
+                  <div>Sub-Category: {app.subCategory || 'N/A'}</div>
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap">
+                  <span className={`px-2 py-1 text-xs font-semibold rounded ${
+                    app.status === 'APPROVED' ? 'bg-green-100 text-green-800' : 
+                    app.status === 'DRAFT' ? 'bg-gray-100 text-gray-800' :
+                    'bg-blue-100 text-blue-800'
+                  }`}>
+                    {app.status}
+                  </span>
+                </td>
+                <td className="px-6 py-4 text-gray-500">{new Date(app.createdAt).toLocaleDateString()}</td>
+                <td className="px-6 py-4 text-gray-400 text-xs italic">{app.notes || 'No notes'}</td>
+                <td className="px-6 py-4 text-center text-gray-400">...</td>
+              </tr>
+            ))}
           </tbody>
         </table>
       </div>
 
       {showAddClient && (
         <AddClientModal
-          onClose={() => setShowAddClient(false)}
+          onClose={handleModalClose}
           prefilledFromCountry={selectedFromCountry}
           prefilledTargetCountry={selectedToCountry}
         />

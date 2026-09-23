@@ -112,9 +112,14 @@ export class ApplicationsService {
   async findAll() {
     return this.prisma.application.findMany({
       include: {
-        customer: true,
+        customer: {
+          include: {
+            user: true
+          }
+        },
         documents: true,
       },
+      orderBy: { createdAt: 'desc' }
     });
   }
 
