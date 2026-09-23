@@ -40,8 +40,8 @@ services:
       JWT_SECRET: ${JWT_SECRET:-supersecret_prod_key}
       MINIO_ENDPOINT: minio
       MINIO_PORT: 9000
-      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-prodadmin}
-      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-prodpassword}
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-prodadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-prodpassword}
       NODE_ENV: production
     depends_on:
       - db
