@@ -1,52 +1,57 @@
-import { useState, useEffect } from 'react';
-
-// Using the same realistic mock data as in Clients
-const FROM_COUNTRIES = ["Angola", "Bangladesh", "India", "Nepal", "Saudi Arabia", "Senegal", "United Arab Emirates"];
-const TO_COUNTRIES = ["Bulgaria", "Czech Republic", "Germany", "Italy", "Japan", "Latvia", "Portugal", "Slovakia"];
-
-const VISA_CENTERS_MAP: Record<string, string[]> = {
-  "Portugal": [
-    "Portugal Visa Application Center – Luanda", 
-    "Portugal Visa Application Center – Dubai", 
-    "Portugal Visa Application Center – Abu Dhabi"
-  ],
-  "Czech Republic": [
-    "Czech Visa Application Center – Abu Dhabi", 
-    "Czech Visa Application Center – Dubai"
-  ],
-  "Slovakia": ["Mumbai", "Chennai", "Bangalore", "Kolkata", "Delhi"],
-  "Italy": ["VFS Global - Dhaka", "VFS Global - Sylhet"],
-  "Japan": ["VFS Global - Kathmandu"],
-  "Germany": ["VFS Global - New Delhi", "VFS Global - Mumbai"],
-  "Bulgaria": ["VFS Global - New Delhi"],
-  "Latvia": ["VFS Global - Dubai", "VFS Global - New Delhi"]
-};
-
-const VISA_CATEGORIES = ["Visto Nacional", "Long Term Visa", "Long Stay", "Seasonal Employment"];
-const SUB_CATEGORIES = ["Visto Nacional (National visa)", "National Visa (Category D/E) Long Term", "Long Stay / Work Permit", "Season-Employment", "Employment"];
+import { useState, useEffect, useMemo } from 'react';
+import { VISA_ROUTE_MASTER } from '../../data/visaRouteMaster';
 
 export default function RoutesConfig() {
   const [routes, setRoutes] = useState<any[]>([]);
-  const [formData, setFormData] = useState({
-    fromCountry: 'United Arab Emirates',
-    toCountry: 'Portugal',
-    visaCenter: 'Portugal Visa Application Center – Dubai',
-    visaCategory: 'Long Term Visa',
-    subCategory: 'National Visa (Category D/E) Long Term',
-    scheduleDate: '',
-    scheduleTime: ''
-  });
+  
+  // Cascading states
+  const [selectedFromCountry, setSelectedFromCountry] = useState("");
+  const [selectedToCountry, setSelectedToCountry] = useState("");
+  const [selectedCenter, setSelectedCenter] = useState("");
+  const [selectedCategory, setSelectedCategory] = useState("");
+  const [selectedSubCategory, setSelectedSubCategory] = useState("");
+  
+  const [scheduleDate, setScheduleDate] = useState('');
+  const [scheduleTime, setScheduleTime] = useState('');
+
   const [loading, setLoading] = useState(true);
 
-  // Dynamically get visa centers based on selected To Country
-  const activeVisaCenters = VISA_CENTERS_MAP[formData.toCountry] || ["To be configured"];
+  // Derived options based on selections
+  const fromCountries = useMemo(() => VISA_ROUTE_MASTER.map(c => c.name), []);
+  
+  const toCountries = useMemo(() => {
+    if (!selectedFromCountry) return [];
+    return VISA_ROUTE_MASTER.find(c => c.name === selectedFromCountry)?.toCountries.map(t => t.name) || [];
+  }, [selectedFromCountry]);
 
-  // Ensure visaCenter is valid when toCountry changes
-  useEffect(() => {
-    if (activeVisaCenters.length > 0 && !activeVisaCenters.includes(formData.visaCenter)) {
-      setFormData(prev => ({...prev, visaCenter: activeVisaCenters[0]}));
-    }
-  }, [formData.toCountry]);
+  const visaCenters = useMemo(() => {
+    if (!selectedFromCountry || !selectedToCountry) return [];
+    const from = VISA_ROUTE_MASTER.find(c => c.name === selectedFromCountry);
+    const to = from?.toCountries.find(t => t.name === selectedToCountry);
+    return to?.centers.map(c => c.name) || [];
+  }, [selectedFromCountry, selectedToCountry]);
+
+  const categories = useMemo(() => {
+    if (!selectedFromCountry || !selectedToCountry || !selectedCenter) return [];
+    const from = VISA_ROUTE_MASTER.find(c => c.name === selectedFromCountry);
+    const to = from?.toCountries.find(t => t.name === selectedToCountry);
+    const center = to?.centers.find(c => c.name === selectedCenter);
+    return center?.categories.map(c => c.name) || [];
+  }, [selectedFromCountry, selectedToCountry, selectedCenter]);
+
+  const subCategories = useMemo(() => {
+    if (!selectedFromCountry || !selectedToCountry || !selectedCenter || !selectedCategory) return [];
+    const from = VISA_ROUTE_MASTER.find(c => c.name === selectedFromCountry);
+    const to = from?.toCountries.find(t => t.name === selectedToCountry);
+    const center = to?.centers.find(c => c.name === selectedCenter);
+    const cat = center?.categories.find(c => c.name === selectedCategory);
+    return cat?.subCategories || [];
+  }, [selectedFromCountry, selectedToCountry, selectedCenter, selectedCategory]);
+
+  const handleFromChange = (val: string) => { setSelectedFromCountry(val); setSelectedToCountry(""); setSelectedCenter(""); setSelectedCategory(""); setSelectedSubCategory(""); };
+  const handleToChange = (val: string) => { setSelectedToCountry(val); setSelectedCenter(""); setSelectedCategory(""); setSelectedSubCategory(""); };
+  const handleCenterChange = (val: string) => { setSelectedCenter(val); setSelectedCategory(""); setSelectedSubCategory(""); };
+  const handleCategoryChange = (val: string) => { setSelectedCategory(val); setSelectedSubCategory(""); };
 
   const fetchRoutes = async () => {
     try {
@@ -70,6 +75,10 @@ export default function RoutesConfig() {
   }, []);
 
   const handleAddRoute = async () => {
+    if (!selectedFromCountry || !selectedToCountry || !selectedCenter || !selectedCategory) {
+      alert("Please select at least From, To, Center, and Category");
+      return;
+    }
     const token = localStorage.getItem('token');
     try {
       const res = await fetch('/api/admin/configured-routes', {
@@ -78,10 +87,23 @@ export default function RoutesConfig() {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`
         },
-        body: JSON.stringify({ ...formData, status: 'READY' })
+        body: JSON.stringify({ 
+          fromCountry: selectedFromCountry,
+          toCountry: selectedToCountry,
+          visaCenter: selectedCenter,
+          visaCategory: selectedCategory,
+          subCategory: selectedSubCategory,
+          scheduleDate: scheduleDate,
+          scheduleTime: scheduleTime,
+          status: 'READY' 
+        })
       });
       if (res.ok) {
         fetchRoutes();
+        // Reset specific fields
+        setSelectedSubCategory("");
+        setScheduleDate("");
+        setScheduleTime("");
       }
     } catch (e) {
       console.error(e);
@@ -135,70 +157,55 @@ export default function RoutesConfig() {
         <div className="grid grid-cols-4 gap-4 mb-4">
           <div>
             <label className="block text-xs text-gray-500 mb-1">From Country</label>
-            <select 
-              className="w-full border-gray-300 rounded p-2 border"
-              value={formData.fromCountry}
-              onChange={e => setFormData({...formData, fromCountry: e.target.value})}
-            >
-              {FROM_COUNTRIES.map(c => <option key={c}>{c}</option>)}
+            <select className="w-full border-gray-300 rounded p-2 border bg-white" value={selectedFromCountry} onChange={e => handleFromChange(e.target.value)}>
+              <option value="">Select origin</option>
+              {fromCountries.map(c => <option key={c} value={c}>{c}</option>)}
             </select>
           </div>
           <div>
             <label className="block text-xs text-gray-500 mb-1">To Country</label>
-            <select 
-              className="w-full border-gray-300 rounded p-2 border"
-              value={formData.toCountry}
-              onChange={e => setFormData({...formData, toCountry: e.target.value})}
-            >
-              {TO_COUNTRIES.map(c => <option key={c}>{c}</option>)}
+            <select className="w-full border-gray-300 rounded p-2 border bg-white" value={selectedToCountry} onChange={e => handleToChange(e.target.value)} disabled={!selectedFromCountry}>
+              <option value="">Select destination</option>
+              {toCountries.map(c => <option key={c} value={c}>{c}</option>)}
             </select>
           </div>
           <div className="col-span-2">
             <label className="block text-xs text-gray-500 mb-1">Visa Center / Location</label>
-            <select 
-              className="w-full border-gray-300 rounded p-2 border"
-              value={formData.visaCenter}
-              onChange={e => setFormData({...formData, visaCenter: e.target.value})}
-            >
-              {activeVisaCenters.map(c => <option key={c}>{c}</option>)}
+            <select className="w-full border-gray-300 rounded p-2 border bg-white" value={selectedCenter} onChange={e => handleCenterChange(e.target.value)} disabled={!selectedToCountry}>
+              <option value="">Select center</option>
+              {visaCenters.map(c => <option key={c} value={c}>{c}</option>)}
             </select>
           </div>
           <div>
             <label className="block text-xs text-gray-500 mb-1">Visa Category</label>
-            <select 
-              className="w-full border-gray-300 rounded p-2 border"
-              value={formData.visaCategory}
-              onChange={e => setFormData({...formData, visaCategory: e.target.value})}
-            >
-              {VISA_CATEGORIES.map(c => <option key={c}>{c}</option>)}
+            <select className="w-full border-gray-300 rounded p-2 border bg-white" value={selectedCategory} onChange={e => handleCategoryChange(e.target.value)} disabled={!selectedCenter}>
+              <option value="">Select category</option>
+              {categories.map(c => <option key={c} value={c}>{c}</option>)}
             </select>
           </div>
           <div>
             <label className="block text-xs text-gray-500 mb-1">Sub Category</label>
-            <select 
-              className="w-full border-gray-300 rounded p-2 border"
-              value={formData.subCategory}
-              onChange={e => setFormData({...formData, subCategory: e.target.value})}
-            >
-              {SUB_CATEGORIES.map(c => <option key={c}>{c}</option>)}
+            <select className="w-full border-gray-300 rounded p-2 border bg-white" value={selectedSubCategory} onChange={e => setSelectedSubCategory(e.target.value)} disabled={!selectedCategory}>
+              <option value="">Select sub category (optional)</option>
+              {subCategories.map(c => <option key={c} value={c}>{c}</option>)}
             </select>
           </div>
           <div>
             <label className="block text-xs text-gray-500 mb-1">Schedule Date</label>
             <input 
               type="date" 
-              className="w-full border-gray-300 rounded p-2 border"
-              value={formData.scheduleDate}
-              onChange={e => setFormData({...formData, scheduleDate: e.target.value})}
+              className="w-full border-gray-300 rounded p-2 border bg-white"
+              value={scheduleDate}
+              onChange={e => setScheduleDate(e.target.value)}
             />
           </div>
           <div>
             <label className="block text-xs text-gray-500 mb-1">Schedule Time</label>
             <input 
               type="time" 
-              className="w-full border-gray-300 rounded p-2 border"
-              value={formData.scheduleTime}
-              onChange={e => setFormData({...formData, scheduleTime: e.target.value})}
+              className="w-full border-gray-300 rounded p-2 border bg-white"
+              value={scheduleTime}
+              onChange={e => setScheduleTime(e.target.value)}
             />
           </div>
         </div>
@@ -236,7 +243,9 @@ export default function RoutesConfig() {
                 </td>
                 <td className="p-3">
                   <div className="text-gray-900 font-medium">{r.visaCenter}</div>
-                  <div className="text-gray-500 text-xs mt-1">{r.visaCategory} - {r.subCategory}</div>
+                  <div className="text-gray-500 text-xs mt-0.5">
+                    {r.visaCategory} {r.subCategory && `> ${r.subCategory}`}
+                  </div>
                 </td>
                 <td className="p-3">
                   {r.scheduleDate && r.scheduleTime ? (
@@ -245,33 +254,36 @@ export default function RoutesConfig() {
                       <div className="text-gray-500 text-xs">{r.scheduleTime}</div>
                     </div>
                   ) : (
-                    <span className="text-gray-400 text-xs italic">Not scheduled</span>
+                    <span className="text-gray-400 text-xs">Continuous</span>
                   )}
                 </td>
                 <td className="p-3">
-                  <span className={`px-2 py-1 rounded text-xs font-bold ${
-                    r.status === 'RUNNING' ? 'bg-blue-100 text-blue-800' : 
-                    r.status === 'READY' ? 'bg-gray-100 text-gray-800' :
-                    r.status === 'STOPPED' ? 'bg-yellow-100 text-yellow-800' :
-                    'bg-red-100 text-red-800'
-                  }`}>
-                    {r.status}
-                  </span>
+                  {r.status === 'RUNNING' ? (
+                    <span className="px-2 py-1 bg-green-100 text-green-700 rounded-full text-xs font-medium border border-green-200 flex items-center w-max">
+                      <span className="w-2 h-2 rounded-full bg-green-500 mr-1.5 animate-pulse"></span>
+                      Running
+                    </span>
+                  ) : (
+                    <span className="px-2 py-1 bg-gray-100 text-gray-700 rounded-full text-xs font-medium border border-gray-200 flex items-center w-max">
+                      <span className="w-2 h-2 rounded-full bg-gray-400 mr-1.5"></span>
+                      Stopped
+                    </span>
+                  )}
                 </td>
                 <td className="p-3 text-center space-x-2">
                   <button 
-                    onClick={() => toggleRunStop(r)}
-                    className={`px-3 py-1 rounded font-semibold text-xs border ${
+                    className={`px-3 py-1.5 rounded text-xs font-medium shadow-sm transition-colors ${
                       r.status === 'RUNNING' 
-                        ? 'border-red-200 bg-red-50 text-red-600 hover:bg-red-100'
-                        : 'border-green-200 bg-green-50 text-green-700 hover:bg-green-100'
+                        ? 'bg-red-50 text-red-700 border border-red-200 hover:bg-red-100' 
+                        : 'bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100'
                     }`}
+                    onClick={() => toggleRunStop(r)}
                   >
                     {r.status === 'RUNNING' ? 'STOP' : 'RUN'}
                   </button>
                   <button 
+                    className="px-3 py-1.5 bg-white border border-gray-300 text-red-600 hover:bg-red-50 rounded text-xs font-medium shadow-sm"
                     onClick={() => handleDelete(r.id)}
-                    className="px-3 py-1 border border-gray-200 bg-white text-gray-600 rounded font-semibold text-xs hover:bg-gray-100"
                   >
                     Delete
                   </button>

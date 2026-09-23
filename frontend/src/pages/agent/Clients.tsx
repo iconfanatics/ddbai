@@ -1,51 +1,52 @@
-import { useState } from 'react';
-
-// Restricted mock data based on initial configuration
-const FROM_COUNTRIES = ["Angola", "Bangladesh", "India", "Nepal", "Saudi Arabia", "Senegal", "United Arab Emirates"];
-const TO_COUNTRIES = ["Bulgaria", "Czech Republic", "Germany", "Italy", "Japan", "Latvia", "Portugal", "Slovakia"];
-
-const VISA_CENTERS_MAP: Record<string, string[]> = {
-  "Portugal": [
-    "Portugal Visa Application Center – Luanda", 
-    "Portugal Visa Application Center – Dubai", 
-    "Portugal Visa Application Center – Abu Dhabi"
-  ],
-  "Czech Republic": [
-    "Czech Visa Application Center – Abu Dhabi", 
-    "Czech Visa Application Center – Dubai"
-  ],
-  "Slovakia": ["Mumbai", "Chennai", "Bangalore", "Kolkata", "Delhi"],
-  "Italy": ["VFS Global - Dhaka", "VFS Global - Sylhet"],
-  "Japan": ["VFS Global - Kathmandu"],
-  "Germany": ["VFS Global - New Delhi", "VFS Global - Mumbai"],
-  "Bulgaria": ["VFS Global - New Delhi"],
-  "Latvia": ["VFS Global - Dubai", "VFS Global - New Delhi"]
-};
-
-const VISA_CATEGORIES = [
-  "Visto Nacional",
-  "Long Term Visa",
-  "Long Stay",
-  "Seasonal Employment",
-  "Tourist Visa",
-  "Business Visa"
-];
-
-const SUB_CATEGORIES = [
-  "Visto Nacional (National visa)",
-  "National Visa (Category D/E) Long Term",
-  "Long Stay / Work Permit",
-  "Season-Employment",
-  "Employment",
-  "Short-term Schengen (Type C)"
-];
+import { useState, useMemo } from 'react';
+import { VISA_ROUTE_MASTER } from '../../data/visaRouteMaster';
 
 export default function Clients() {
   const [showAddClient, setShowAddClient] = useState(false);
-  const [selectedToCountry, setSelectedToCountry] = useState("Portugal");
+  
+  // Cascading states
+  const [selectedFromCountry, setSelectedFromCountry] = useState("");
+  const [selectedToCountry, setSelectedToCountry] = useState("");
+  const [selectedCenter, setSelectedCenter] = useState("");
+  const [selectedCategory, setSelectedCategory] = useState("");
+  const [selectedSubCategory, setSelectedSubCategory] = useState("");
 
-  // Dynamically get visa centers based on selected To Country
-  const activeVisaCenters = VISA_CENTERS_MAP[selectedToCountry] || ["To be configured"];
+  // Derived options based on selections
+  const fromCountries = useMemo(() => VISA_ROUTE_MASTER.map(c => c.name), []);
+  
+  const toCountries = useMemo(() => {
+    if (!selectedFromCountry) return [];
+    return VISA_ROUTE_MASTER.find(c => c.name === selectedFromCountry)?.toCountries.map(t => t.name) || [];
+  }, [selectedFromCountry]);
+
+  const visaCenters = useMemo(() => {
+    if (!selectedFromCountry || !selectedToCountry) return [];
+    const from = VISA_ROUTE_MASTER.find(c => c.name === selectedFromCountry);
+    const to = from?.toCountries.find(t => t.name === selectedToCountry);
+    return to?.centers.map(c => c.name) || [];
+  }, [selectedFromCountry, selectedToCountry]);
+
+  const categories = useMemo(() => {
+    if (!selectedFromCountry || !selectedToCountry || !selectedCenter) return [];
+    const from = VISA_ROUTE_MASTER.find(c => c.name === selectedFromCountry);
+    const to = from?.toCountries.find(t => t.name === selectedToCountry);
+    const center = to?.centers.find(c => c.name === selectedCenter);
+    return center?.categories.map(c => c.name) || [];
+  }, [selectedFromCountry, selectedToCountry, selectedCenter]);
+
+  const subCategories = useMemo(() => {
+    if (!selectedFromCountry || !selectedToCountry || !selectedCenter || !selectedCategory) return [];
+    const from = VISA_ROUTE_MASTER.find(c => c.name === selectedFromCountry);
+    const to = from?.toCountries.find(t => t.name === selectedToCountry);
+    const center = to?.centers.find(c => c.name === selectedCenter);
+    const cat = center?.categories.find(c => c.name === selectedCategory);
+    return cat?.subCategories || [];
+  }, [selectedFromCountry, selectedToCountry, selectedCenter, selectedCategory]);
+
+  const handleFromChange = (val: string) => { setSelectedFromCountry(val); setSelectedToCountry(""); setSelectedCenter(""); setSelectedCategory(""); setSelectedSubCategory(""); };
+  const handleToChange = (val: string) => { setSelectedToCountry(val); setSelectedCenter(""); setSelectedCategory(""); setSelectedSubCategory(""); };
+  const handleCenterChange = (val: string) => { setSelectedCenter(val); setSelectedCategory(""); setSelectedSubCategory(""); };
+  const handleCategoryChange = (val: string) => { setSelectedCategory(val); setSelectedSubCategory(""); };
 
   return (
     <div className="p-6 bg-white min-h-screen text-gray-800 text-sm">
@@ -80,45 +81,40 @@ export default function Clients() {
         <div className="grid grid-cols-5 gap-4 mb-4">
           <div>
             <label className="block text-xs text-gray-500 mb-1">From Country</label>
-            <select className="w-full border-gray-300 rounded p-2 border text-sm">
-              <option>All origins</option>
-              {FROM_COUNTRIES.map(c => <option key={c}>{c}</option>)}
+            <select className="w-full border-gray-300 rounded p-2 border text-sm" value={selectedFromCountry} onChange={e => handleFromChange(e.target.value)}>
+              <option value="">All origins</option>
+              {fromCountries.map(c => <option key={c} value={c}>{c}</option>)}
             </select>
           </div>
           <div>
             <label className="block text-xs text-gray-500 mb-1">To Country</label>
-            <select 
-              className="w-full border-gray-300 rounded p-2 border text-sm"
-              value={selectedToCountry}
-              onChange={e => setSelectedToCountry(e.target.value)}
-            >
-              <option value="All destinations">All destinations</option>
-              {TO_COUNTRIES.map(c => <option key={c} value={c}>{c}</option>)}
+            <select className="w-full border-gray-300 rounded p-2 border text-sm" value={selectedToCountry} onChange={e => handleToChange(e.target.value)} disabled={!selectedFromCountry}>
+              <option value="">All destinations</option>
+              {toCountries.map(c => <option key={c} value={c}>{c}</option>)}
             </select>
           </div>
           <div>
             <label className="block text-xs text-gray-500 mb-1">Visa Center</label>
-            <select className="w-full border-gray-300 rounded p-2 border text-sm">
-              <option>All visa centers</option>
-              {activeVisaCenters.map(c => <option key={c}>{c}</option>)}
+            <select className="w-full border-gray-300 rounded p-2 border text-sm" value={selectedCenter} onChange={e => handleCenterChange(e.target.value)} disabled={!selectedToCountry}>
+              <option value="">All visa centers</option>
+              {visaCenters.map(c => <option key={c} value={c}>{c}</option>)}
             </select>
           </div>
           <div>
             <label className="block text-xs text-gray-500 mb-1">Visa Category</label>
-            <select className="w-full border-gray-300 rounded p-2 border text-sm">
-              <option>All categories</option>
-              {VISA_CATEGORIES.map(c => <option key={c}>{c}</option>)}
+            <select className="w-full border-gray-300 rounded p-2 border text-sm" value={selectedCategory} onChange={e => handleCategoryChange(e.target.value)} disabled={!selectedCenter}>
+              <option value="">All categories</option>
+              {categories.map(c => <option key={c} value={c}>{c}</option>)}
             </select>
           </div>
           <div>
             <label className="block text-xs text-gray-500 mb-1">Sub Category</label>
-            <select className="w-full border-gray-300 rounded p-2 border text-sm">
-              <option>All sub categories</option>
-              {SUB_CATEGORIES.map(c => <option key={c}>{c}</option>)}
+            <select className="w-full border-gray-300 rounded p-2 border text-sm" value={selectedSubCategory} onChange={e => setSelectedSubCategory(e.target.value)} disabled={!selectedCategory}>
+              <option value="">All sub categories</option>
+              {subCategories.map(c => <option key={c} value={c}>{c}</option>)}
             </select>
           </div>
         </div>
-
         {/* Row 2 */}
         <div className="grid grid-cols-6 gap-4 mb-6">
           <div>
