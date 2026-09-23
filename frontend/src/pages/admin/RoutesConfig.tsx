@@ -157,35 +157,35 @@ export default function RoutesConfig() {
         <div className="grid grid-cols-4 gap-4 mb-4">
           <div>
             <label className="block text-xs text-gray-500 mb-1">From Country</label>
-            <select className="w-full border-gray-300 rounded p-2 border bg-white" value={selectedFromCountry} onChange={e => handleFromChange(e.target.value)}>
+            <select className="w-full border-gray-300 rounded p-2 border text-sm bg-white" value={selectedFromCountry} onChange={e => handleFromChange(e.target.value)}>
               <option value="">Select origin</option>
               {fromCountries.map((c, i) => <option key={i} value={c}>{c}</option>)}
             </select>
           </div>
           <div>
             <label className="block text-xs text-gray-500 mb-1">To Country</label>
-            <select className="w-full border-gray-300 rounded p-2 border bg-white" value={selectedToCountry} onChange={e => handleToChange(e.target.value)} disabled={!selectedFromCountry}>
+            <select className="w-full border-gray-300 rounded p-2 border text-sm bg-white" value={selectedToCountry} onChange={e => handleToChange(e.target.value)} disabled={!selectedFromCountry}>
               <option value="">Select destination</option>
               {toCountries.map((c, i) => <option key={i} value={c}>{c}</option>)}
             </select>
           </div>
           <div className="col-span-2">
             <label className="block text-xs text-gray-500 mb-1">Visa Center / Location</label>
-            <select className="w-full border-gray-300 rounded p-2 border bg-white" value={selectedCenter} onChange={e => handleCenterChange(e.target.value)} disabled={!selectedToCountry}>
+            <select className="w-full border-gray-300 rounded p-2 border text-sm bg-white" value={selectedCenter} onChange={e => handleCenterChange(e.target.value)} disabled={!selectedToCountry}>
               <option value="">Select center</option>
               {visaCenters.map((c, i) => <option key={i} value={c}>{c}</option>)}
             </select>
           </div>
           <div>
             <label className="block text-xs text-gray-500 mb-1">Visa Category</label>
-            <select className="w-full border-gray-300 rounded p-2 border bg-white" value={selectedCategory} onChange={e => handleCategoryChange(e.target.value)} disabled={!selectedCenter}>
+            <select className="w-full border-gray-300 rounded p-2 border text-sm bg-white" value={selectedCategory} onChange={e => handleCategoryChange(e.target.value)} disabled={!selectedCenter}>
               <option value="">Select category</option>
               {categories.map((c, i) => <option key={i} value={c}>{c}</option>)}
             </select>
           </div>
           <div>
             <label className="block text-xs text-gray-500 mb-1">Sub Category</label>
-            <select className="w-full border-gray-300 rounded p-2 border bg-white" value={selectedSubCategory} onChange={e => setSelectedSubCategory(e.target.value)} disabled={!selectedCategory}>
+            <select className="w-full border-gray-300 rounded p-2 border text-sm bg-white" value={selectedSubCategory} onChange={e => setSelectedSubCategory(e.target.value)} disabled={!selectedCategory}>
               <option value="">Select sub category (optional)</option>
               {subCategories.map((c, i) => <option key={i} value={c}>{c}</option>)}
             </select>
@@ -194,7 +194,7 @@ export default function RoutesConfig() {
             <label className="block text-xs text-gray-500 mb-1">Schedule Date</label>
             <input 
               type="date" 
-              className="w-full border-gray-300 rounded p-2 border bg-white"
+              className="w-full border-gray-300 rounded p-2 border text-sm bg-white"
               value={scheduleDate}
               onChange={e => setScheduleDate(e.target.value)}
             />
@@ -203,7 +203,7 @@ export default function RoutesConfig() {
             <label className="block text-xs text-gray-500 mb-1">Schedule Time</label>
             <input 
               type="time" 
-              className="w-full border-gray-300 rounded p-2 border bg-white"
+              className="w-full border-gray-300 rounded p-2 border text-sm bg-white"
               value={scheduleTime}
               onChange={e => setScheduleTime(e.target.value)}
             />
