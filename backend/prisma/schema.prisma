@@ -153,6 +153,7 @@ model VerificationSession {
   application     Application @relation(fields: [applicationId], references: [id])
   status          String   @default("PENDING") // PENDING, PASSED, FAILED, MANUAL_REVIEW
   providerName    String   @default("MOCK_PROVIDER")
+  verificationUrl String?
   score           Float?
   hasConsent      Boolean  @default(false)
   notes           String?

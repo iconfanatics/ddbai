@@ -48,4 +48,25 @@ export class ApplicationsController {
   updateStatus(@Param('id') id: string, @Body() body: { status: string, notes?: string }) {
     return this.applicationsService.updateStatus(id, body.status, body.notes);
   }
+
+  @Patch(':id/notes')
+  updateNotes(@Param('id') id: string, @Body() body: { notes: string }) {
+    return this.applicationsService.updateNotes(id, body.notes);
+  }
+
+  @Post(':id/generate-verification-link')
+  generateVerificationLink(@Param('id') id: string) {
+    return this.applicationsService.generateVerificationLink(id);
+  }
+
+  @Post('bulk-delete')
+  bulkDelete(@Body() body: { ids: string[] }) {
+    return this.applicationsService.bulkDelete(body.ids);
+  }
+
+  @Post('bulk-reset-verification')
+  bulkResetVerification(@Body() body: { ids: string[] }) {
+    return this.applicationsService.bulkResetVerification(body.ids);
+  }
 }
+

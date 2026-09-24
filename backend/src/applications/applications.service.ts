@@ -118,6 +118,10 @@ export class ApplicationsService {
           }
         },
         documents: true,
+        verificationSessions: {
+          orderBy: { createdAt: 'desc' },
+          take: 1
+        }
       },
       orderBy: { createdAt: 'desc' }
     });
@@ -137,5 +141,48 @@ export class ApplicationsService {
       where: { id },
       data: { status, notes },
     });
+  }
+
+  async updateNotes(id: string, notes: string) {
+    return this.prisma.application.update({
+      where: { id },
+      data: { notes },
+    });
+  }
+
+  async generateVerificationLink(id: string) {
+    // Generate a secure mock link
+    const token = crypto.randomUUID();
+    const url = `https://verify.visasync.dev/v/${token}`;
+    
+    const session = await this.prisma.verificationSession.create({
+      data: {
+        applicationId: id,
+        status: 'PENDING',
+        verificationUrl: url,
+        expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000), // 24 hours
+      }
+    });
+    return { url: session.verificationUrl, session };
+  }
+
+  async bulkDelete(ids: string[]) {
+    return this.prisma.$transaction(async (tx) => {
+      // First delete dependent verification sessions, documents, etc if needed.
+      // Assuming Prisma takes care of it via cascading, or we manually delete.
+      await tx.verificationSession.deleteMany({ where: { applicationId: { in: ids } } });
+      const result = await tx.application.deleteMany({
+        where: { id: { in: ids } }
+      });
+      return { count: result.count };
+    });
+  }
+
+  async bulkResetVerification(ids: string[]) {
+    // Delete all verification sessions for these applications
+    await this.prisma.verificationSession.deleteMany({
+      where: { applicationId: { in: ids } }
+    });
+    return { count: ids.length };
   }
 }
