@@ -569,6 +569,13 @@ export default function Clients() {
           prefilledTargetCountry={selectedToCountry}
         />
       )}
+      {editingClient && (
+        <EditApplicantModal 
+          client={editingClient} 
+          onClose={() => setEditingClient(null)} 
+          onSave={() => { setEditingClient(null); fetchClients(); }} 
+        />
+      )}
     </div>
   );
 }
