@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react';
+import { useState, useMemo, useEffect } from 'react';
+import { VISA_ROUTE_MASTER } from '../../data/visaRouteMaster';
 import { AddClientModal } from './AddClientModal';
 
 export default function Clients() {
@@ -12,8 +13,77 @@ export default function Clients() {
   const [loadingAction, setLoadingAction] = useState(false);
   
   // Cascading states (Row 1)
-  const [selectedFromCountry] = useState("");
-  const [selectedToCountry] = useState("");
+  const [selectedFromCountry, setSelectedFromCountry] = useState("");
+  const [selectedToCountry, setSelectedToCountry] = useState("");
+  const [selectedCenter, setSelectedCenter] = useState("");
+  const [selectedCategory, setSelectedCategory] = useState("");
+  const [selectedSubCategory, setSelectedSubCategory] = useState("");
+
+  // Row 2 filter states
+  const [selectedUser, setSelectedUser] = useState("");
+  const [selectedStatus, setSelectedStatus] = useState("");
+  const [selectedPauseState, setSelectedPauseState] = useState("");
+  const [selectedFaceVerification, setSelectedFaceVerification] = useState("");
+  const [selectedPdfAvailable, setSelectedPdfAvailable] = useState("");
+  const [transactionId, setTransactionId] = useState("");
+
+  // Applicant filter states
+  const [applicantName, setApplicantName] = useState("");
+  const [passportNumber, setPassportNumber] = useState("");
+  const [referenceNumber, setReferenceNumber] = useState("");
+  const [urn, setUrn] = useState("");
+
+  // Date filter states
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+
+  // Derived options based on selections
+  const fromCountries = useMemo(() => VISA_ROUTE_MASTER.map(c => c.name), []);
+  
+  const toCountries = useMemo(() => {
+    if (!selectedFromCountry) return [];
+    return VISA_ROUTE_MASTER.find(c => c.name === selectedFromCountry)?.toCountries.map(t => t.name) || [];
+  }, [selectedFromCountry]);
+
+  const visaCenters = useMemo(() => {
+    if (!selectedFromCountry || !selectedToCountry) return [];
+    const from = VISA_ROUTE_MASTER.find(c => c.name === selectedFromCountry);
+    const to = from?.toCountries.find(t => t.name === selectedToCountry);
+    return to?.centers.map(c => typeof c === 'string' ? c : c.name) || [];
+  }, [selectedFromCountry, selectedToCountry]);
+
+  const categories = useMemo(() => {
+    if (!selectedFromCountry || !selectedToCountry || !selectedCenter) return [];
+    const from = VISA_ROUTE_MASTER.find(c => c.name === selectedFromCountry);
+    const to = from?.toCountries.find(t => t.name === selectedToCountry);
+    const center = to?.centers.find(c => (typeof c === 'string' ? c : c.name) === selectedCenter);
+    if (!center || typeof center === 'string') return [];
+    return center.categories.map(c => c.name) || [];
+  }, [selectedFromCountry, selectedToCountry, selectedCenter]);
+
+  const subCategories = useMemo(() => {
+    if (!selectedFromCountry || !selectedToCountry || !selectedCenter || !selectedCategory) return [];
+    const from = VISA_ROUTE_MASTER.find(c => c.name === selectedFromCountry);
+    const to = from?.toCountries.find(t => t.name === selectedToCountry);
+    const center = to?.centers.find(c => (typeof c === 'string' ? c : c.name) === selectedCenter);
+    if (!center || typeof center === 'string') return [];
+    const cat = center.categories.find(c => c.name === selectedCategory);
+    return cat?.subCategories || [];
+  }, [selectedFromCountry, selectedToCountry, selectedCenter, selectedCategory]);
+
+  const handleFromChange = (val: string) => { setSelectedFromCountry(val); setSelectedToCountry(""); setSelectedCenter(""); setSelectedCategory(""); setSelectedSubCategory(""); };
+  const handleToChange = (val: string) => { setSelectedToCountry(val); setSelectedCenter(""); setSelectedCategory(""); setSelectedSubCategory(""); };
+  const handleCenterChange = (val: string) => { setSelectedCenter(val); setSelectedCategory(""); setSelectedSubCategory(""); };
+  const handleCategoryChange = (val: string) => { setSelectedCategory(val); setSelectedSubCategory(""); };
+
+  const clearAllFilters = () => {
+    setSelectedFromCountry(""); setSelectedToCountry(""); setSelectedCenter("");
+    setSelectedCategory(""); setSelectedSubCategory("");
+    setSelectedUser(""); setSelectedStatus(""); setSelectedPauseState("");
+    setSelectedFaceVerification(""); setSelectedPdfAvailable(""); setTransactionId("");
+    setApplicantName(""); setPassportNumber(""); setReferenceNumber(""); setUrn("");
+    setDateFrom(""); setDateTo("");
+  };
 
   const fetchClients = async () => {
     setLoading(true);
@@ -194,6 +264,127 @@ export default function Clients() {
           </button>
         </div>
       </div>
+
+      {/* Filters Section */}
+      <div className="bg-white border border-gray-200 rounded-lg p-5 mb-6 shadow-sm">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center text-gray-700 font-medium">
+            <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"></path></svg>
+            Filters
+          </div>
+          <button
+            onClick={clearAllFilters}
+            className="text-xs text-gray-500 hover:text-red-500 border border-gray-300 hover:border-red-300 px-3 py-1 rounded bg-white hover:bg-red-50 transition-colors font-medium"
+          >
+            ✕ Clear All Filters
+          </button>
+        </div>
+
+        {/* Row 1 */}
+        <div className="grid grid-cols-5 gap-4 mb-4">
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">From Country</label>
+            <select className="w-full border-gray-300 rounded p-2 border text-sm bg-white" value={selectedFromCountry} onChange={e => handleFromChange(e.target.value)}>
+              <option value="">All origins</option>
+              {fromCountries.map((c, i) => <option key={i} value={c}>{c}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">To Country</label>
+            <select className="w-full border-gray-300 rounded p-2 border text-sm bg-white" value={selectedToCountry} onChange={e => handleToChange(e.target.value)} disabled={!selectedFromCountry}>
+              <option value="">All destinations</option>
+              {toCountries.map((c, i) => <option key={i} value={c}>{c}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Visa Center</label>
+            <select className="w-full border-gray-300 rounded p-2 border text-sm bg-white" value={selectedCenter} onChange={e => handleCenterChange(e.target.value)} disabled={!selectedToCountry}>
+              <option value="">All visa centers</option>
+              {visaCenters.map((c, i) => <option key={i} value={c}>{c}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Visa Category</label>
+            <select className="w-full border-gray-300 rounded p-2 border text-sm bg-white" value={selectedCategory} onChange={e => handleCategoryChange(e.target.value)} disabled={!selectedCenter}>
+              <option value="">All categories</option>
+              {categories.map((c, i) => <option key={i} value={c}>{c}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Sub Category</label>
+            <select className="w-full border-gray-300 rounded p-2 border text-sm bg-white" value={selectedSubCategory} onChange={e => setSelectedSubCategory(e.target.value)} disabled={!selectedCategory}>
+              <option value="">All sub categories</option>
+              {subCategories.map((c, i) => <option key={i} value={c}>{c}</option>)}
+            </select>
+          </div>
+        </div>
+        {/* Row 2 */}
+        <div className="grid grid-cols-6 gap-4 mb-6">
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">User</label>
+            <select className="w-full border-gray-300 rounded p-2 border text-sm bg-white" value={selectedUser} onChange={e => setSelectedUser(e.target.value)}><option value="">All users</option><option value="Nirupam Nirupam">Nirupam Nirupam</option><option value="Sany Sany">Sany Sany</option></select>
+          </div>
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Status</label>
+            <select className="w-full border-gray-300 rounded p-2 border text-sm bg-white" value={selectedStatus} onChange={e => setSelectedStatus(e.target.value)}><option value="">All statuses</option><option value="Face Verification Pending">Face Verification Pending</option><option value="Processing">Processing</option><option value="Completed">Completed</option></select>
+          </div>
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Pause State</label>
+            <select className="w-full border-gray-300 rounded p-2 border text-sm bg-white" value={selectedPauseState} onChange={e => setSelectedPauseState(e.target.value)}><option value="">All</option><option value="Yes">Yes</option><option value="No">No</option></select>
+          </div>
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Face Verification</label>
+            <select className="w-full border-gray-300 rounded p-2 border text-sm bg-white" value={selectedFaceVerification} onChange={e => setSelectedFaceVerification(e.target.value)}><option value="">All</option><option value="Yes">Yes</option><option value="No">No</option></select>
+          </div>
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">PDF Available</label>
+            <select className="w-full border-gray-300 rounded p-2 border text-sm bg-white" value={selectedPdfAvailable} onChange={e => setSelectedPdfAvailable(e.target.value)}><option value="">All</option><option value="Yes">Yes</option><option value="No">No</option></select>
+          </div>
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Transaction ID</label>
+            <input type="text" placeholder="All" className="w-full border-gray-300 rounded p-2 border text-sm bg-white" value={transactionId} onChange={e => setTransactionId(e.target.value)} />
+          </div>
+        </div>
+
+        {/* Applicant Filters */}
+        <div className="border-t border-gray-200 pt-4 mb-4">
+          <h3 className="text-xs font-semibold text-gray-700 mb-3 uppercase">Applicant Filters</h3>
+          <div className="grid grid-cols-4 gap-4 mb-4">
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Applicant Name</label>
+              <input type="text" placeholder="Search by name..." className="w-full border-gray-300 rounded p-2 border text-sm bg-white" value={applicantName} onChange={e => setApplicantName(e.target.value)} />
+            </div>
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Passport Number</label>
+              <input type="text" placeholder="Search by passport..." className="w-full border-gray-300 rounded p-2 border text-sm bg-white" value={passportNumber} onChange={e => setPassportNumber(e.target.value)} />
+            </div>
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Reference Number</label>
+              <input type="text" placeholder="Search by reference..." className="w-full border-gray-300 rounded p-2 border text-sm bg-white" value={referenceNumber} onChange={e => setReferenceNumber(e.target.value)} />
+            </div>
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">URN</label>
+              <input type="text" placeholder="Search by URN..." className="w-full border-gray-300 rounded p-2 border text-sm bg-white" value={urn} onChange={e => setUrn(e.target.value)} />
+            </div>
+          </div>
+        </div>
+
+        {/* Date Filters */}
+        <div className="border-t border-gray-200 pt-4 mb-4">
+          <h3 className="text-xs font-semibold text-gray-700 mb-3 uppercase">Preferred Date Filters</h3>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Date From</label>
+              <input type="date" className="w-full border-gray-300 rounded p-2 border text-sm bg-white" value={dateFrom} onChange={e => setDateFrom(e.target.value)} />
+            </div>
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Date To</label>
+              <input type="date" className="w-full border-gray-300 rounded p-2 border text-sm bg-white" value={dateTo} onChange={e => setDateTo(e.target.value)} />
+            </div>
+          </div>
+        </div>
+      </div>
+
 
       {/* Selected Client Toolbar */}
       {selectedClientIds.length > 0 && (
