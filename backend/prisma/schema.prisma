@@ -113,6 +113,8 @@ model Application {
   customer        CustomerProfile @relation(fields: [customerId], references: [id])
   status          String   @default("DRAFT") // DRAFT, PENDING_DOCS, UNDER_REVIEW, APPROVED, REJECTED
   routeId         String?  // Relation to Route in Phase 5
+  fromCountry     String?
+  targetCountry   String?
   applicationCenter String?
   category          String?
   subCategory       String?

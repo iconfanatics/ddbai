@@ -77,7 +77,8 @@ export class ApplicationsService {
           data: {
             customerId: profile.id,
             status: 'DRAFT',
-            notes: `Target: ${data.targetCountry}`,
+            fromCountry: data.fromCountry || null,
+            targetCountry: data.targetCountry || null,
             applicationCenter: data.applicationCenter || null,
             category: data.category || null,
             subCategory: data.subCategory || null,

@@ -1,0 +1,391 @@
+const fs = require('fs');
+
+const code = `import { useState, useMemo, useEffect, useRef } from 'react';
+import { VISA_ROUTE_MASTER } from '../../data/visaRouteMaster';
+import { AddClientModal } from './AddClientModal';
+
+export default function Clients() {
+  const [showAddClient, setShowAddClient] = useState(false);
+  const [clients, setClients] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedClientIds, setSelectedClientIds] = useState<string[]>([]);
+  const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
+  const [noteInput, setNoteInput] = useState("");
+  const [actionMenuOpen, setActionMenuOpen] = useState<string | null>(null);
+  const [loadingAction, setLoadingAction] = useState(false);
+  
+  // Cascading states (Row 1)
+  const [selectedFromCountry, setSelectedFromCountry] = useState("");
+  const [selectedToCountry, setSelectedToCountry] = useState("");
+
+  const fetchClients = async () => {
+    setLoading(true);
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch('/api/applications', { headers: { Authorization: \\\`Bearer \\\${token}\\\` } });
+      if (res.ok) {
+        const data = await res.json();
+        setClients(data);
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchClients();
+  }, []);
+
+  const handleModalClose = () => {
+    setShowAddClient(false);
+    fetchClients();
+  };
+
+  // Selection Logic
+  const isAllSelected = clients.length > 0 && selectedClientIds.length === clients.length;
+  const isIndeterminate = selectedClientIds.length > 0 && selectedClientIds.length < clients.length;
+
+  const toggleSelectAll = () => {
+    if (isAllSelected) {
+      setSelectedClientIds([]);
+    } else {
+      setSelectedClientIds(clients.map(c => c.id));
+    }
+  };
+
+  const toggleSelectRow = (id: string) => {
+    setSelectedClientIds(prev => 
+      prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
+    );
+  };
+
+  // Bulk Actions
+  const handleBulkDelete = async () => {
+    if (!confirm(\\\`Delete \\\${selectedClientIds.length} clients? This action is destructive.\\\`)) return;
+    setLoadingAction(true);
+    try {
+      const token = localStorage.getItem('token');
+      await fetch('/api/applications/bulk-delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: \\\`Bearer \\\${token}\\\` },
+        body: JSON.stringify({ ids: selectedClientIds })
+      });
+      setSelectedClientIds([]);
+      await fetchClients();
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoadingAction(false);
+    }
+  };
+
+  const handleBulkResetVerification = async () => {
+    if (!confirm(\\\`Reset verification for \\\${selectedClientIds.length} clients?\\\`)) return;
+    setLoadingAction(true);
+    try {
+      const token = localStorage.getItem('token');
+      await fetch('/api/applications/bulk-reset-verification', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: \\\`Bearer \\\${token}\\\` },
+        body: JSON.stringify({ ids: selectedClientIds })
+      });
+      await fetchClients();
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoadingAction(false);
+    }
+  };
+
+  const handleCopyUrls = () => {
+    const urls = clients
+      .filter(c => selectedClientIds.includes(c.id))
+      .map(c => c.verificationSessions?.[0]?.verificationUrl)
+      .filter(url => !!url);
+    
+    if (urls.length > 0) {
+      navigator.clipboard.writeText(urls.join('\\n'));
+      alert(\\\`Copied \\\${urls.length} URLs to clipboard.\\\`);
+    } else {
+      alert('No verification URLs available for selected clients.');
+    }
+  };
+
+  const handleExportCSV = () => {
+    const selected = clients.filter(c => selectedClientIds.includes(c.id));
+    const csvContent = [
+      ['ID', 'Applicant', 'Target Country', 'Center', 'Category', 'Sub-Category', 'Status', 'Notes'].join(','),
+      ...selected.map(c => [
+        c.id,
+        \\\`"\\\${c.customer?.user?.firstName || ''} \\\${c.customer?.user?.lastName || ''}"\\\`,
+        \\\`"\\\${c.notes?.replace('Target: ', '') || ''}"\\\`,
+        \\\`"\\\${c.applicationCenter || ''}"\\\`,
+        \\\`"\\\${c.category || ''}"\\\`,
+        \\\`"\\\${c.subCategory || ''}"\\\`,
+        c.status,
+        \\\`"\\\${(c.notes || '').replace(/"/g, '""')}"\\\`
+      ].join(','))
+    ].join('\\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'clients_export.csv';
+    a.click();
+  };
+
+  const handleExportJSON = () => {
+    const selected = clients.filter(c => selectedClientIds.includes(c.id));
+    const blob = new Blob([JSON.stringify(selected, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'clients_export.json';
+    a.click();
+  };
+
+  // Inline Row Actions
+  const handleGenerateLink = async (id: string) => {
+    try {
+      const token = localStorage.getItem('token');
+      await fetch(\\\`/api/applications/\\\${id}/generate-verification-link\\\`, {
+        method: 'POST',
+        headers: { Authorization: \\\`Bearer \\\${token}\\\` }
+      });
+      await fetchClients();
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const saveNote = async (id: string) => {
+    if (editingNoteId !== id) return;
+    try {
+      const token = localStorage.getItem('token');
+      await fetch(\\\`/api/applications/\\\${id}/notes\\\`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Authorization: \\\`Bearer \\\${token}\\\` },
+        body: JSON.stringify({ notes: noteInput })
+      });
+      await fetchClients();
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setEditingNoteId(null);
+    }
+  };
+
+  return (
+    <div className="p-6 bg-white min-h-screen text-gray-800 text-sm">
+      <div className="flex justify-between items-center mb-6">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Clients</h1>
+          <p className="text-gray-500">Manage your visa application clients</p>
+        </div>
+        <div className="space-x-3">
+          <button className="px-4 py-2 bg-white border border-gray-300 text-gray-700 font-semibold rounded shadow-sm hover:bg-gray-50">
+            Bulk Upload
+          </button>
+          <button
+            onClick={() => setShowAddClient(true)}
+            className="px-4 py-2 bg-gray-900 text-white font-semibold rounded shadow-sm hover:bg-gray-800"
+          >
+            + Add Client
+          </button>
+        </div>
+      </div>
+
+      {/* Selected Client Toolbar */}
+      {selectedClientIds.length > 0 && (
+        <div className="mb-4 bg-blue-50 border border-blue-200 rounded p-3 flex items-center justify-between shadow-sm">
+          <div className="text-blue-800 font-medium text-sm">
+            Selected: {selectedClientIds.length} client{selectedClientIds.length !== 1 ? 's' : ''}
+          </div>
+          <div className="flex space-x-2">
+            <button onClick={handleCopyUrls} disabled={loadingAction} className="px-3 py-1.5 text-xs font-semibold bg-white border border-blue-200 text-blue-700 rounded hover:bg-blue-100 flex items-center">
+              Copy URLs
+            </button>
+            <button onClick={handleExportCSV} disabled={loadingAction} className="px-3 py-1.5 text-xs font-semibold bg-white border border-blue-200 text-blue-700 rounded hover:bg-blue-100 flex items-center">
+              Export CSV
+            </button>
+            <button onClick={handleExportJSON} disabled={loadingAction} className="px-3 py-1.5 text-xs font-semibold bg-white border border-blue-200 text-blue-700 rounded hover:bg-blue-100 flex items-center">
+              Export JSON
+            </button>
+            <button onClick={handleBulkResetVerification} disabled={loadingAction} className="px-3 py-1.5 text-xs font-semibold bg-white border border-orange-200 text-orange-700 rounded hover:bg-orange-100 flex items-center">
+              Reset Verification
+            </button>
+            <button onClick={handleBulkDelete} disabled={loadingAction} className="px-3 py-1.5 text-xs font-semibold bg-white border border-red-200 text-red-700 rounded hover:bg-red-100 flex items-center">
+              Delete
+            </button>
+            <button disabled={true} className="px-3 py-1.5 text-xs font-semibold bg-gray-100 border border-gray-200 text-gray-500 rounded cursor-not-allowed flex items-center">
+              Update Notes
+            </button>
+            <button disabled={true} className="px-3 py-1.5 text-xs font-semibold bg-purple-100 border border-purple-300 text-purple-700 rounded cursor-not-allowed flex items-center">
+              Run
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Table Section */}
+      <div className="bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden pb-16">
+        <table className="min-w-full divide-y divide-gray-200 relative">
+          <thead className="bg-gray-50 text-xs text-gray-500 uppercase tracking-wider">
+            <tr>
+              <th className="px-4 py-4 text-left w-12">
+                <input 
+                  type="checkbox" 
+                  className="rounded text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer" 
+                  checked={isAllSelected}
+                  ref={el => { if (el) el.indeterminate = isIndeterminate; }}
+                  onChange={toggleSelectAll}
+                />
+              </th>
+              <th className="px-4 py-4 text-left font-semibold">Applicants</th>
+              <th className="px-4 py-4 text-left font-semibold">User</th>
+              <th className="px-4 py-4 text-left font-semibold">Target Visa</th>
+              <th className="px-4 py-4 text-left font-semibold">Status</th>
+              <th className="px-4 py-4 text-left font-semibold w-64">Verification / Link</th>
+              <th className="px-4 py-4 text-left font-semibold w-48">Notes</th>
+              <th className="px-4 py-4 text-center font-semibold w-16">Actions</th>
+            </tr>
+          </thead>
+          <tbody className="bg-white divide-y divide-gray-200">
+            {loading ? (
+              <tr><td colSpan={8} className="px-6 py-8 text-center text-gray-500">Loading clients...</td></tr>
+            ) : clients.length === 0 ? (
+              <tr><td colSpan={8} className="px-6 py-8 text-center text-gray-500">No clients found. Click "+ Add Client" to create one.</td></tr>
+            ) : clients.map((app: any) => {
+              const vSession = app.verificationSessions?.[0];
+              const requiresFaceVerification = true; // Assume required based on spec for now
+
+              return (
+                <tr key={app.id} className={\`hover:bg-gray-50 \\\${selectedClientIds.includes(app.id) ? 'bg-blue-50/30' : ''}\`}>
+                  <td className="px-4 py-4">
+                    <input 
+                      type="checkbox" 
+                      className="rounded text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer" 
+                      checked={selectedClientIds.includes(app.id)}
+                      onChange={() => toggleSelectRow(app.id)}
+                    />
+                  </td>
+                  <td className="px-4 py-4">
+                    <div className="flex flex-col">
+                      <span className="text-blue-600 text-xs font-semibold">1 applicant</span>
+                      <span className="text-gray-900 font-medium uppercase text-xs mt-1">
+                        {app.customer?.user?.firstName || 'UNKNOWN'} {app.customer?.user?.lastName || ''}
+                      </span>
+                    </div>
+                  </td>
+                  <td className="px-4 py-4 text-gray-700 font-medium">System (API)</td>
+                  <td className="px-4 py-4 text-xs text-gray-500">
+                    <div className="font-semibold text-gray-700">Center: {app.applicationCenter || 'N/A'}</div>
+                    <div>Category: {app.category || 'N/A'}</div>
+                    <div>Sub-Category: {app.subCategory || 'N/A'}</div>
+                  </td>
+                  <td className="px-4 py-4">
+                    <div className="flex flex-col gap-1 items-start">
+                      {requiresFaceVerification && (!vSession || vSession.status === 'PENDING') && (
+                        <span className="px-2 py-1 bg-yellow-100 text-yellow-800 text-[10px] font-semibold rounded whitespace-nowrap">Face Verification Pending</span>
+                      )}
+                      <span className="px-2 py-1 bg-blue-100 text-blue-800 text-[10px] font-semibold rounded">Processing</span>
+                    </div>
+                  </td>
+                  <td className="px-4 py-4">
+                    {!vSession?.verificationUrl ? (
+                      <button onClick={() => handleGenerateLink(app.id)} className="text-blue-600 text-xs font-semibold hover:underline flex items-center">
+                        <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/></svg>
+                        Generate Link
+                      </button>
+                    ) : (
+                      <div className="flex flex-col gap-1">
+                        <div className="flex items-center gap-1">
+                          <input readOnly value={vSession.verificationUrl} className="text-[10px] p-1 border border-gray-300 rounded w-full bg-gray-50 focus:outline-none" />
+                          <button onClick={() => { navigator.clipboard.writeText(vSession.verificationUrl); alert('Copied'); }} className="text-gray-500 hover:text-gray-700" title="Copy URL">
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
+                          </button>
+                        </div>
+                        <div className="flex items-center justify-between mt-1">
+                          <span className="text-green-600 text-[10px] font-semibold flex items-center"><svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"/></svg>Verify Link Available</span>
+                          <button onClick={() => handleGenerateLink(app.id)} className="text-blue-500 hover:text-blue-700 text-[10px] font-medium underline">Regenerate</button>
+                        </div>
+                      </div>
+                    )}
+                  </td>
+                  <td className="px-4 py-4 text-xs">
+                    {editingNoteId === app.id ? (
+                      <div className="flex flex-col gap-1">
+                        <textarea 
+                          className="w-full border border-blue-300 rounded p-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500"
+                          value={noteInput}
+                          onChange={e => setNoteInput(e.target.value)}
+                          onBlur={() => saveNote(app.id)}
+                          onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); saveNote(app.id); } }}
+                          autoFocus
+                          rows={2}
+                        />
+                        <span className="text-[9px] text-gray-400">Press Enter to save</span>
+                      </div>
+                    ) : (
+                      <div 
+                        className={\`cursor-text p-1 min-h-[24px] rounded border border-transparent hover:border-gray-200 hover:bg-gray-50 \\\${!app.notes ? 'text-gray-400 italic' : 'text-gray-700'}\`}
+                        onClick={() => { setEditingNoteId(app.id); setNoteInput(app.notes || ''); }}
+                      >
+                        {app.notes || 'Add note...'}
+                      </div>
+                    )}
+                  </td>
+                  <td className="px-4 py-4 text-center relative">
+                    <button 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setActionMenuOpen(actionMenuOpen === app.id ? null : app.id);
+                      }} 
+                      className="text-gray-400 hover:text-gray-600 p-1 rounded hover:bg-gray-100"
+                    >
+                      <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z"/></svg>
+                    </button>
+                    {actionMenuOpen === app.id && (
+                      <>
+                        <div className="fixed inset-0 z-10" onClick={() => setActionMenuOpen(null)}></div>
+                        <div className="absolute right-8 top-10 w-48 bg-white border border-gray-200 shadow-xl rounded-md py-1 z-20 text-left">
+                          <button className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center"><svg className="w-4 h-4 mr-2 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>View Client</button>
+                          <button className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center"><svg className="w-4 h-4 mr-2 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>Edit Applicant</button>
+                          <button className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center"><svg className="w-4 h-4 mr-2 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"/></svg>Review Client Images</button>
+                          <button className="w-full text-left px-4 py-2 text-sm text-orange-700 hover:bg-gray-100 flex items-center border-t border-gray-100"><svg className="w-4 h-4 mr-2 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>Request to Cancel</button>
+                          <button onClick={() => {
+                            if(confirm('Are you sure you want to delete this client?')) {
+                              setSelectedClientIds([app.id]);
+                              handleBulkDelete();
+                              setActionMenuOpen(null);
+                            }
+                          }} className="w-full text-left px-4 py-2 text-sm text-red-700 hover:bg-gray-100 flex items-center"><svg className="w-4 h-4 mr-2 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>Delete Client</button>
+                        </div>
+                      </>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      {showAddClient && (
+        <AddClientModal
+          onClose={handleModalClose}
+          prefilledFromCountry={selectedFromCountry}
+          prefilledTargetCountry={selectedToCountry}
+        />
+      )}
+    </div>
+  );
+}
+`
+
+// Unescape the backslashes to get proper template strings in JS
+const finalCode = code.replace(/\\\\\\\`/g, '`').replace(/\\\\\\\$/g, '$');
+fs.writeFileSync('frontend/src/pages/agent/Clients.tsx', finalCode);

@@ -1,3 +1,4 @@
+import { UnauthorizedException } from "@nestjs/common";
 import { Controller, Request, Post, UseGuards, Body, Get } from '@nestjs/common';
 import { AuthService } from './auth.service.js';
 import { AuthGuard } from '@nestjs/passport';
@@ -12,7 +13,7 @@ export class AuthController {
     // In a real app, use LocalGuard to validate first
     const user = await this.authService.validateUser(req.email, req.password);
     if (!user) {
-      throw new Error('Invalid credentials');
+      throw new UnauthorizedException('Invalid credentials');
     }
     return this.authService.login(user);
   }
