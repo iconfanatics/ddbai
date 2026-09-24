@@ -49,6 +49,11 @@ export class ApplicationsController {
     return this.applicationsService.updateStatus(id, body.status, body.notes);
   }
 
+  @Patch(':id')
+  update(@Param('id') id: string, @Body() body: any) {
+    return this.applicationsService.update(id, body);
+  }
+
   @Patch(':id/notes')
   updateNotes(@Param('id') id: string, @Body() body: { notes: string }) {
     return this.applicationsService.updateNotes(id, body.notes);

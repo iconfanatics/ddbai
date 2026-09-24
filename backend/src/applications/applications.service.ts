@@ -144,6 +144,51 @@ export class ApplicationsService {
     });
   }
 
+  async update(id: string, data: any) {
+    return this.prisma.$transaction(async (tx) => {
+      const app = await tx.application.findUnique({
+        where: { id },
+        include: { customer: { include: { user: true } } }
+      });
+      if (!app) throw new Error('Application not found');
+
+      // Update Application Route Details
+      await tx.application.update({
+        where: { id },
+        data: {
+          applicationCenter: data.applicationCenter !== undefined ? data.applicationCenter : app.applicationCenter,
+          category: data.category !== undefined ? data.category : app.category,
+          subCategory: data.subCategory !== undefined ? data.subCategory : app.subCategory,
+        }
+      });
+
+      // Update Customer Profile
+      await tx.customerProfile.update({
+        where: { id: app.customerId },
+        data: {
+          passportNumber: data.passportNumber !== undefined ? data.passportNumber : app.customer.passportNumber,
+          nationality: data.nationality !== undefined ? data.nationality : app.customer.nationality,
+          gender: data.gender !== undefined ? data.gender : app.customer.gender,
+          city: data.city !== undefined ? data.city : app.customer.city,
+          dateOfBirth: data.dateOfBirth ? new Date(data.dateOfBirth) : app.customer.dateOfBirth,
+        }
+      });
+
+      // Update User Name
+      if (data.firstName !== undefined || data.lastName !== undefined) {
+        await tx.user.update({
+          where: { id: app.customer.userId },
+          data: {
+            firstName: data.firstName !== undefined ? data.firstName : app.customer.user.firstName,
+            lastName: data.lastName !== undefined ? data.lastName : app.customer.user.lastName,
+          }
+        });
+      }
+
+      return { success: true };
+    });
+  }
+
   async updateNotes(id: string, notes: string) {
     return this.prisma.application.update({
       where: { id },
