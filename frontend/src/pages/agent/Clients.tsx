@@ -406,7 +406,7 @@ export default function Clients() {
             <button onClick={handleBulkResetVerification} disabled={loadingAction} className="px-3 py-1.5 text-xs font-semibold bg-white border border-orange-200 text-orange-700 rounded hover:bg-orange-100 flex items-center">
               Reset Verification
             </button>
-            <button onClick={handleBulkDelete} disabled={loadingAction} className="px-3 py-1.5 text-xs font-semibold bg-white border border-red-200 text-red-700 rounded hover:bg-red-100 flex items-center">
+            <button onClick={() => handleBulkDelete()} disabled={loadingAction} className="px-3 py-1.5 text-xs font-semibold bg-white border border-red-200 text-red-700 rounded hover:bg-red-100 flex items-center">
               Delete
             </button>
             <button disabled={true} className="px-3 py-1.5 text-xs font-semibold bg-gray-100 border border-gray-200 text-gray-500 rounded cursor-not-allowed flex items-center">
