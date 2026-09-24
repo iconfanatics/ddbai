@@ -167,10 +167,16 @@ export class ApplicationsService {
         where: { id: app.customerId },
         data: {
           passportNumber: data.passportNumber !== undefined ? data.passportNumber : app.customer.passportNumber,
+          passportExpiry: data.passportExpiry ? new Date(data.passportExpiry) : app.customer.passportExpiry,
           nationality: data.nationality !== undefined ? data.nationality : app.customer.nationality,
           gender: data.gender !== undefined ? data.gender : app.customer.gender,
-          city: data.city !== undefined ? data.city : app.customer.city,
           dateOfBirth: data.dateOfBirth ? new Date(data.dateOfBirth) : app.customer.dateOfBirth,
+          gapDays: data.gapDays !== undefined ? data.gapDays : app.customer.gapDays,
+          addressLine1: data.addressLine1 !== undefined ? data.addressLine1 : app.customer.addressLine1,
+          addressLine2: data.addressLine2 !== undefined ? data.addressLine2 : app.customer.addressLine2,
+          state: data.state !== undefined ? data.state : app.customer.state,
+          postalCode: data.postalCode !== undefined ? data.postalCode : app.customer.postalCode,
+          city: data.city !== undefined ? data.city : app.customer.city,
         }
       });
 

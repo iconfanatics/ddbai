@@ -12,6 +12,12 @@ export function EditApplicantModal({ client, onClose, onSave }: { client: any, o
   // Basic date string formatting for input type="date"
   const formatDate = (dateString?: string) => dateString ? new Date(dateString).toISOString().split('T')[0] : '';
   const [dateOfBirth, setDateOfBirth] = useState(formatDate(client.customer?.dateOfBirth));
+  const [passportExpiry, setPassportExpiry] = useState(formatDate(client.customer?.passportExpiry));
+  const [gapDays, setGapDays] = useState(client.customer?.gapDays || '');
+  const [addressLine1, setAddressLine1] = useState(client.customer?.addressLine1 || '');
+  const [addressLine2, setAddressLine2] = useState(client.customer?.addressLine2 || '');
+  const [state, setState] = useState(client.customer?.state || '');
+  const [postalCode, setPostalCode] = useState(client.customer?.postalCode || '');
   const [city, setCity] = useState(client.customer?.city || '');
 
   const [saving, setSaving] = useState(false);
@@ -24,7 +30,9 @@ export function EditApplicantModal({ client, onClose, onSave }: { client: any, o
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({
-          firstName, lastName, nationality, passportNumber, gender, dateOfBirth, city
+          firstName, lastName, nationality, passportNumber, gender, dateOfBirth,
+          passportExpiry, gapDays: gapDays ? parseInt(gapDays as string, 10) : null,
+          addressLine1, addressLine2, state, postalCode, city
         })
       });
       onSave();
@@ -64,12 +72,20 @@ export function EditApplicantModal({ client, onClose, onSave }: { client: any, o
               <input type="text" className="w-full border-gray-300 rounded p-2 text-sm border uppercase font-semibold" value={passportNumber} onChange={e => setPassportNumber(e.target.value)} />
             </div>
             <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">Passport Expiry Date</label>
+              <input type="date" className="w-full border-gray-300 rounded p-2 text-sm border" value={passportExpiry} onChange={e => setPassportExpiry(e.target.value)} />
+            </div>
+          </div>
+          
+          <div className="grid grid-cols-3 gap-4">
+            <div>
               <label className="block text-xs font-medium text-gray-700 mb-1">Nationality</label>
               <SearchableSelect options={COUNTRY_MASTER_LIST} value={nationality} onChange={setNationality} />
             </div>
-          </div>
-
-          <div className="grid grid-cols-3 gap-4">
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">Date of Birth</label>
+              <input type="date" className="w-full border-gray-300 rounded p-2 text-sm border" value={dateOfBirth} onChange={e => setDateOfBirth(e.target.value)} />
+            </div>
             <div>
               <label className="block text-xs font-medium text-gray-700 mb-1">Gender</label>
               <select className="w-full border-gray-300 rounded p-2 text-sm border" value={gender} onChange={e => setGender(e.target.value)}>
@@ -78,13 +94,32 @@ export function EditApplicantModal({ client, onClose, onSave }: { client: any, o
                 <option value="Female">Female</option>
               </select>
             </div>
+          </div>
+
+          <div className="grid grid-cols-3 gap-4 border-t border-gray-100 pt-4">
             <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">Date of Birth</label>
-              <input type="date" className="w-full border-gray-300 rounded p-2 text-sm border" value={dateOfBirth} onChange={e => setDateOfBirth(e.target.value)} />
+              <label className="block text-xs font-medium text-gray-700 mb-1">Gap (Days)</label>
+              <input type="number" className="w-full border-gray-300 rounded p-2 text-sm border" value={gapDays} onChange={e => setGapDays(e.target.value)} />
+            </div>
+            <div className="col-span-2">
+              <label className="block text-xs font-medium text-gray-700 mb-1">Address Line 1</label>
+              <input type="text" className="w-full border-gray-300 rounded p-2 text-sm border" value={addressLine1} onChange={e => setAddressLine1(e.target.value)} />
+            </div>
+            <div className="col-span-2">
+              <label className="block text-xs font-medium text-gray-700 mb-1">Address Line 2</label>
+              <input type="text" className="w-full border-gray-300 rounded p-2 text-sm border" value={addressLine2} onChange={e => setAddressLine2(e.target.value)} />
             </div>
             <div>
               <label className="block text-xs font-medium text-gray-700 mb-1">City</label>
               <input type="text" className="w-full border-gray-300 rounded p-2 text-sm border" value={city} onChange={e => setCity(e.target.value)} />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">State</label>
+              <input type="text" className="w-full border-gray-300 rounded p-2 text-sm border" value={state} onChange={e => setState(e.target.value)} />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">Postal Code</label>
+              <input type="text" className="w-full border-gray-300 rounded p-2 text-sm border" value={postalCode} onChange={e => setPostalCode(e.target.value)} />
             </div>
           </div>
         </div>

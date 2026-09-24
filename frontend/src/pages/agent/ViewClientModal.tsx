@@ -16,13 +16,28 @@ export function ViewClientModal({ client, onClose }: { client: any, onClose: () 
           <div>
             <h3 className="text-gray-900 font-semibold mb-3 border-b pb-1">Applicant Information</h3>
             <div className="grid grid-cols-2 gap-y-3">
-              <div><span className="text-gray-500 block text-xs">First Name</span><span className="font-medium">{u?.firstName || 'N/A'}</span></div>
-              <div><span className="text-gray-500 block text-xs">Last Name</span><span className="font-medium">{u?.lastName || 'N/A'}</span></div>
-              <div><span className="text-gray-500 block text-xs">Passport Number</span><span className="font-medium uppercase">{c?.passportNumber || 'N/A'}</span></div>
-              <div><span className="text-gray-500 block text-xs">Nationality</span><span className="font-medium">{c?.nationality || 'N/A'}</span></div>
-              <div><span className="text-gray-500 block text-xs">Date of Birth</span><span className="font-medium">{c?.dateOfBirth ? new Date(c.dateOfBirth).toLocaleDateString() : 'N/A'}</span></div>
-              <div><span className="text-gray-500 block text-xs">Gender</span><span className="font-medium">{c?.gender || 'N/A'}</span></div>
-              <div><span className="text-gray-500 block text-xs">City</span><span className="font-medium">{c?.city || 'N/A'}</span></div>
+              <div><span className="text-gray-500 block text-xs">First Name</span><span className="font-medium">{u?.firstName || ''}</span></div>
+              <div><span className="text-gray-500 block text-xs">Last Name</span><span className="font-medium">{u?.lastName || ''}</span></div>
+              
+              <div><span className="text-gray-500 block text-xs">Passport Number</span><span className="font-medium uppercase">{c?.passportNumber || ''}</span></div>
+              <div><span className="text-gray-500 block text-xs">Passport Expiry Date</span><span className="font-medium">{c?.passportExpiry ? new Date(c.passportExpiry).toLocaleDateString() : ''}</span></div>
+              
+              <div><span className="text-gray-500 block text-xs">Nationality</span><span className="font-medium">{c?.nationality || ''}</span></div>
+              <div><span className="text-gray-500 block text-xs">Date of Birth</span><span className="font-medium">{c?.dateOfBirth ? new Date(c.dateOfBirth).toLocaleDateString() : ''}</span></div>
+              
+              <div><span className="text-gray-500 block text-xs">Gender</span><span className="font-medium">{c?.gender || ''}</span></div>
+              <div><span className="text-gray-500 block text-xs">Gap (Days)</span><span className="font-medium">{c?.gapDays || ''}</span></div>
+            </div>
+          </div>
+          
+          <div>
+            <h3 className="text-gray-900 font-semibold mb-3 border-b pb-1">Address Details</h3>
+            <div className="grid grid-cols-2 gap-y-3">
+              <div className="col-span-2"><span className="text-gray-500 block text-xs">Address Line 1</span><span className="font-medium">{c?.addressLine1 || ''}</span></div>
+              <div className="col-span-2"><span className="text-gray-500 block text-xs">Address Line 2</span><span className="font-medium">{c?.addressLine2 || ''}</span></div>
+              <div><span className="text-gray-500 block text-xs">City</span><span className="font-medium">{c?.city || ''}</span></div>
+              <div><span className="text-gray-500 block text-xs">State</span><span className="font-medium">{c?.state || ''}</span></div>
+              <div><span className="text-gray-500 block text-xs">Postal Code</span><span className="font-medium">{c?.postalCode || ''}</span></div>
             </div>
           </div>
           
