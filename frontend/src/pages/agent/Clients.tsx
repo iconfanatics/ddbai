@@ -1,5 +1,4 @@
-import { useState, useMemo, useEffect, useRef } from 'react';
-import { VISA_ROUTE_MASTER } from '../../data/visaRouteMaster';
+import { useState, useEffect } from 'react';
 import { AddClientModal } from './AddClientModal';
 
 export default function Clients() {
@@ -13,17 +12,14 @@ export default function Clients() {
   const [loadingAction, setLoadingAction] = useState(false);
   
   // Cascading states (Row 1)
-  const [selectedFromCountry, setSelectedFromCountry] = useState("");
-  const [selectedToCountry, setSelectedToCountry] = useState("");
-  const [selectedCenter, setSelectedCenter] = useState("");
-  const [selectedCategory, setSelectedCategory] = useState("");
-  const [selectedSubCategory, setSelectedSubCategory] = useState("");
+  const [selectedFromCountry] = useState("");
+  const [selectedToCountry] = useState("");
 
   const fetchClients = async () => {
     setLoading(true);
     try {
       const token = localStorage.getItem('token');
-      const res = await fetch('/api/applications', { headers: { Authorization: \`Bearer \${token}\` } });
+      const res = await fetch('/api/applications', { headers: { Authorization: `Bearer ${token}` } });
       if (res.ok) {
         const data = await res.json();
         setClients(data);
@@ -64,13 +60,13 @@ export default function Clients() {
 
   // Bulk Actions
   const handleBulkDelete = async () => {
-    if (!confirm(\`Delete \${selectedClientIds.length} clients? This action is destructive.\`)) return;
+    if (!confirm(`Delete ${selectedClientIds.length} clients? This action is destructive.`)) return;
     setLoadingAction(true);
     try {
       const token = localStorage.getItem('token');
       await fetch('/api/applications/bulk-delete', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: \`Bearer \${token}\` },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ ids: selectedClientIds })
       });
       setSelectedClientIds([]);
@@ -83,13 +79,13 @@ export default function Clients() {
   };
 
   const handleBulkResetVerification = async () => {
-    if (!confirm(\`Reset verification for \${selectedClientIds.length} clients?\`)) return;
+    if (!confirm(`Reset verification for ${selectedClientIds.length} clients?`)) return;
     setLoadingAction(true);
     try {
       const token = localStorage.getItem('token');
       await fetch('/api/applications/bulk-reset-verification', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: \`Bearer \${token}\` },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ ids: selectedClientIds })
       });
       await fetchClients();
@@ -108,7 +104,7 @@ export default function Clients() {
     
     if (urls.length > 0) {
       navigator.clipboard.writeText(urls.join('\n'));
-      alert(\`Copied \${urls.length} URLs to clipboard.\`);
+      alert(`Copied ${urls.length} URLs to clipboard.`);
     } else {
       alert('No verification URLs available for selected clients.');
     }
@@ -120,13 +116,13 @@ export default function Clients() {
       ['ID', 'Applicant', 'Target Country', 'Center', 'Category', 'Sub-Category', 'Status', 'Notes'].join(','),
       ...selected.map(c => [
         c.id,
-        \`"\${c.customer?.user?.firstName || ''} \${c.customer?.user?.lastName || ''}"\`,
-        \`"\${c.notes?.replace('Target: ', '') || ''}"\`,
-        \`"\${c.applicationCenter || ''}"\`,
-        \`"\${c.category || ''}"\`,
-        \`"\${c.subCategory || ''}"\`,
+        `"${c.customer?.user?.firstName || ''} ${c.customer?.user?.lastName || ''}"`,
+        `"${c.notes?.replace('Target: ', '') || ''}"`,
+        `"${c.applicationCenter || ''}"`,
+        `"${c.category || ''}"`,
+        `"${c.subCategory || ''}"`,
         c.status,
-        \`"\${(c.notes || '').replace(/"/g, '""')}"\`
+        `"${(c.notes || '').replace(/"/g, '""')}"`
       ].join(','))
     ].join('\n');
 
@@ -152,9 +148,9 @@ export default function Clients() {
   const handleGenerateLink = async (id: string) => {
     try {
       const token = localStorage.getItem('token');
-      await fetch(\`/api/applications/\${id}/generate-verification-link\`, {
+      await fetch(`/api/applications/${id}/generate-verification-link`, {
         method: 'POST',
-        headers: { Authorization: \`Bearer \${token}\` }
+        headers: { Authorization: `Bearer ${token}` }
       });
       await fetchClients();
     } catch (e) {
@@ -166,9 +162,9 @@ export default function Clients() {
     if (editingNoteId !== id) return;
     try {
       const token = localStorage.getItem('token');
-      await fetch(\`/api/applications/\${id}/notes\`, {
+      await fetch(`/api/applications/${id}/notes`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', Authorization: \`Bearer \${token}\` },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ notes: noteInput })
       });
       await fetchClients();
