@@ -276,19 +276,27 @@ export class ApplicationsService {
   }
 
   async generateVerificationLink(id: string) {
-    // Generate a secure mock link
-    const token = crypto.randomUUID();
-    const url = `https://verify.visasync.dev/v/${token}`;
-    
     const session = await this.prisma.verificationSession.create({
       data: {
         applicationId: id,
         status: 'PENDING',
-        verificationUrl: url,
         expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000), // 24 hours
       }
     });
-    return { url: session.verificationUrl, session };
+
+    const url = `https://face-verification-app.fastjourney.shop/?token=${session.id}`;
+    
+    await this.prisma.verificationSession.update({
+      where: { id: session.id },
+      data: { verificationUrl: url }
+    });
+
+    await this.prisma.application.update({
+      where: { id },
+      data: { faceVerificationStatus: 'PENDING' }
+    });
+
+    return { url, session };
   }
 
   async bulkDelete(ids: string[]) {

@@ -173,6 +173,27 @@ export default function Clients() {
     }
   };
 
+  const handleBulkRun = async () => {
+    if (selectedClientIds.length === 0) return;
+    setLoadingAction(true);
+    try {
+      const token = localStorage.getItem('token');
+      for (const id of selectedClientIds) {
+        await fetch(`/api/applications/${id}/run`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}` }
+        });
+      }
+      setSelectedClientIds([]);
+      await fetchClients();
+    } catch (e) {
+      console.error(e);
+      alert('Some applications could not be run. Check if face verification is complete.');
+    } finally {
+      setLoadingAction(false);
+    }
+  };
+
   const handleCopyUrls = () => {
     const urls = clients
       .filter(c => selectedClientIds.includes(c.id))
@@ -418,8 +439,8 @@ export default function Clients() {
             <button disabled={true} className="px-3 py-1.5 text-xs font-semibold bg-gray-100 border border-gray-200 text-gray-500 rounded cursor-not-allowed flex items-center">
               Update Notes
             </button>
-            <button disabled={true} className="px-3 py-1.5 text-xs font-semibold bg-purple-100 border border-purple-300 text-purple-700 rounded cursor-not-allowed flex items-center">
-              Run
+            <button onClick={handleBulkRun} disabled={loadingAction || selectedClientIds.length === 0} className={`px-3 py-1.5 text-xs font-semibold border rounded flex items-center ${selectedClientIds.length > 0 ? 'bg-purple-600 border-purple-700 text-white hover:bg-purple-700' : 'bg-gray-100 border-gray-200 text-gray-500 cursor-not-allowed'}`}>
+              Run {selectedClientIds.length > 0 ? `(${selectedClientIds.length})` : ''}
             </button>
           </div>
         </div>
@@ -455,7 +476,7 @@ export default function Clients() {
               <tr><td colSpan={8} className="px-6 py-8 text-center text-gray-500">No clients found. Click "+ Add Client" to create one.</td></tr>
             ) : clients.map((app: any) => {
               const vSession = app.verificationSessions?.[0];
-              const requiresFaceVerification = true; // Assume required based on spec for now
+              const requiresFaceVerification = app.faceVerificationRequired;
 
               return (
                 <tr key={app.id} className={`hover:bg-gray-50 ${selectedClientIds.includes(app.id) ? 'bg-blue-50/30' : ''}`}>

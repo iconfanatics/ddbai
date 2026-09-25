@@ -24,9 +24,12 @@ export default function Dashboard({ role }: { role: string }) {
           )}
           {role === 'agent' && (
             <>
-              <NavLink to="/agent/clients" className={getNavLinkClass}>Clients</NavLink>
+                            <NavLink to="/agent/clients" className={getNavLinkClass}>01 - Clients</NavLink>
+              <NavLink to="/agent/without-face" className={getNavLinkClass}>02 - Without Face Verification</NavLink>
+              <NavLink to="/agent/face-review" className={getNavLinkClass}>03 - Face Verification Review</NavLink>
+              <NavLink to="/agent/processing" className={getNavLinkClass}>04 - Processing</NavLink>
+              <NavLink to="/agent/bookings" className={getNavLinkClass}>05 - Booking Request Queue</NavLink>
               <NavLink to="/agent/slots" className={getNavLinkClass}>Slot Monitoring</NavLink>
-              <NavLink to="/agent/bookings" className={getNavLinkClass}>Booking Queue</NavLink>
               <NavLink to="/agent/wallet" className={getNavLinkClass}>My Wallet</NavLink>
             </>
           )}

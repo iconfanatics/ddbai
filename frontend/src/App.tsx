@@ -11,6 +11,9 @@ import AgentDashboard from './pages/agent/AgentDashboard';
 import Clients from './pages/agent/Clients';
 import SlotMonitoring from './pages/agent/SlotMonitoring';
 import BookingQueue from './pages/agent/BookingQueue';
+import WithoutFaceVerification from './pages/agent/WithoutFaceVerification';
+import FaceVerificationReview from './pages/agent/FaceVerificationReview';
+import Processing from './pages/agent/Processing';
 import AgentWallet from './pages/agent/AgentWallet';
 import CustomerPortal from './pages/customer/CustomerPortal';
 
@@ -34,6 +37,9 @@ function App() {
         <Route path="/agent" element={<Dashboard role="agent" />}>
           <Route index element={<AgentDashboard />} />
           <Route path="clients" element={<Clients />} />
+          <Route path="without-face" element={<WithoutFaceVerification />} />
+          <Route path="face-review" element={<FaceVerificationReview />} />
+          <Route path="processing" element={<Processing />} />
           <Route path="slots" element={<SlotMonitoring />} />
           <Route path="bookings" element={<BookingQueue />} />
           <Route path="wallet" element={<AgentWallet />} />
