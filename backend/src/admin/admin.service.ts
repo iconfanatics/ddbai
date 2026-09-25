@@ -22,21 +22,27 @@ export class AdminService {
   }
 
   async getAgents() {
-    const memberships = await this.prisma.organizationMembership.findMany({
+    const users = await this.prisma.user.findMany({
       include: {
-        user: true,
-        organization: true,
-        branch: true,
-        role: true,
+        memberships: {
+          include: { role: true, organization: true }
+        }
       }
     });
-    const agentMemberships = memberships.filter(m => m.role.name !== 'SUPER_ADMIN');
-    return agentMemberships.map(m => ({
-      id: m.user.id,
-      email: m.user.email,
-      org: m.organization?.name || 'Unknown',
-      status: m.user.isActive ? 'Active' : 'Inactive'
-    }));
+
+    const agentUsers = users.filter(u => 
+      !u.memberships.some(m => m.role.name === 'SUPER_ADMIN')
+    );
+
+    return agentUsers.map(u => {
+      const mainMembership = u.memberships[0];
+      return {
+        id: u.id,
+        email: u.email,
+        org: mainMembership?.organization?.name || 'Unassigned',
+        status: u.isActive ? 'Active' : 'Inactive'
+      };
+    });
   }
 
   async inviteAgent(email: string, orgId: string) {
