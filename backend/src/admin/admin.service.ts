@@ -23,18 +23,18 @@ export class AdminService {
 
   async getAgents() {
     const memberships = await this.prisma.organizationMembership.findMany({
-      where: { role: { name: 'AGENT' } },
       include: {
         user: true,
         organization: true,
         branch: true,
+        role: true,
       }
     });
-    // Format to match frontend expectations
-    return memberships.map(m => ({
+    const agentMemberships = memberships.filter(m => m.role.name !== 'SUPER_ADMIN');
+    return agentMemberships.map(m => ({
       id: m.user.id,
       email: m.user.email,
-      org: m.organization.name,
+      org: m.organization?.name || 'Unknown',
       status: m.user.isActive ? 'Active' : 'Inactive'
     }));
   }
