@@ -120,6 +120,8 @@ model Application {
   subCategory       String?
   assignedAgentId String?
   notes           String?
+  faceVerificationRequired Boolean @default(false)
+  faceVerificationStatus   String? // PENDING, VERIFIED, FAILED
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
@@ -127,6 +129,7 @@ model Application {
   verificationSessions VerificationSession[]
   bookingRequests BookingRequest[]
   invoices        Invoice[]
+  processingRun   ProcessingRun?
 }
 
 model DocumentChecklist {
@@ -147,6 +150,17 @@ model Document {
   rejectionNote String?
   version       Int      @default(1)
   uploadedAt    DateTime @default(now())
+}
+
+
+model ProcessingRun {
+  id               String   @id @default(uuid())
+  applicationId    String   @unique
+  application      Application @relation(fields: [applicationId], references: [id])
+  startedAt        DateTime @default(now())
+  status           String   @default("RUNNING") // RUNNING, PAUSED, COMPLETED, FAILED
+  sourcePage       String   // PAGE_02 (Without Face), PAGE_03 (Face Review)
+  masterSyncStatus String   @default("PENDING") // PENDING, SYNCED
 }
 
 model VerificationSession {

@@ -29,6 +29,11 @@ export class ApplicationsController {
     return this.applicationsService.createClient(body);
   }
 
+  @Post('webhook/face-verification')
+  handleFaceVerificationWebhook(@Body() body: { token: string, status: string, matchScore?: number, notes?: string }) {
+    return this.applicationsService.handleFaceVerificationWebhook(body);
+  }
+
   @Post()
   create(@Body() body: { customerId: string, routeId?: string }) {
     return this.applicationsService.create(body);
@@ -57,6 +62,11 @@ export class ApplicationsController {
   @Patch(':id/notes')
   updateNotes(@Param('id') id: string, @Body() body: { notes: string }) {
     return this.applicationsService.updateNotes(id, body.notes);
+  }
+
+  @Post(':id/run')
+  runApplication(@Param('id') id: string) {
+    return this.applicationsService.runApplication(id);
   }
 
   @Post(':id/generate-verification-link')

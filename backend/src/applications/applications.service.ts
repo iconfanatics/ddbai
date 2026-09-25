@@ -202,6 +202,79 @@ export class ApplicationsService {
     });
   }
 
+  async runApplication(id: string) {
+    const application = await this.prisma.application.findUnique({
+      where: { id },
+      include: { processingRun: true }
+    });
+
+    if (!application) {
+      throw new NotFoundException('Application not found');
+    }
+
+    if (application.processingRun) {
+      throw new BadRequestException('Application is already running');
+    }
+
+    if (application.faceVerificationRequired && application.faceVerificationStatus !== 'VERIFIED') {
+      throw new BadRequestException('Face verification must be completed before running');
+    }
+
+    // Determine the source page destination for the run
+    const sourcePage = application.faceVerificationRequired ? 'PAGE_03' : 'PAGE_02';
+
+    // Move state to running (Processing / Ready -> Running)
+    await this.prisma.application.update({
+      where: { id },
+      data: { status: 'RUNNING' }
+    });
+
+    return this.prisma.processingRun.create({
+      data: {
+        applicationId: id,
+        sourcePage: sourcePage,
+        status: 'RUNNING'
+      }
+    });
+  }
+
+  async handleFaceVerificationWebhook(body: { token: string, status: string, matchScore?: number, notes?: string }) {
+    const session = await this.prisma.verificationSession.findFirst({
+      where: { id: body.token }
+    });
+    if (!session) {
+      throw new NotFoundException('Verification session not found');
+    }
+
+    await this.prisma.verificationSession.update({
+      where: { id: session.id },
+      data: {
+        status: body.status,
+        score: body.matchScore,
+        notes: body.notes
+      }
+    });
+
+    if (body.status === 'VERIFIED') {
+      await this.prisma.application.update({
+        where: { id: session.applicationId },
+        data: {
+          faceVerificationStatus: 'VERIFIED',
+          status: 'READY'
+        }
+      });
+    } else {
+      await this.prisma.application.update({
+        where: { id: session.applicationId },
+        data: {
+          faceVerificationStatus: body.status
+        }
+      });
+    }
+
+    return { success: true };
+  }
+
   async generateVerificationLink(id: string) {
     // Generate a secure mock link
     const token = crypto.randomUUID();
