@@ -98,7 +98,8 @@ export default function Clients() {
       const res = await fetch('/api/applications', { headers: { Authorization: `Bearer ${token}` } });
       if (res.ok) {
         const data = await res.json();
-        setClients(data);
+        // Hide applications that have already been 'Run' and are in the dashboard processing queue
+        setClients(data.filter((app: any) => app.status !== 'RUNNING'));
       }
     } catch (e) {
       console.error(e);
