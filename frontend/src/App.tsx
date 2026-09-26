@@ -13,6 +13,7 @@ import SlotMonitoring from './pages/agent/SlotMonitoring';
 import BookingQueue from './pages/agent/BookingQueue';
 import AgentWallet from './pages/agent/AgentWallet';
 import CustomerPortal from './pages/customer/CustomerPortal';
+import FaceVerificationCustomerPage from './pages/customer/FaceVerificationCustomerPage';
 
 
 
@@ -63,6 +64,7 @@ function App() {
 
         {/* Customer Routes */}
         <Route path="/customer/*" element={<CustomerPortal />} />
+        <Route path="/verify/:token" element={<FaceVerificationCustomerPage />} />
 
         <Route path="/" element={<Navigate to="/login" />} />
         <Route path="*" element={<Navigate to="/login" />} />
