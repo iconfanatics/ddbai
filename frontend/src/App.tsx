@@ -11,9 +11,6 @@ import AgentDashboard from './pages/agent/AgentDashboard';
 import Clients from './pages/agent/Clients';
 import SlotMonitoring from './pages/agent/SlotMonitoring';
 import BookingQueue from './pages/agent/BookingQueue';
-import WithoutFaceVerification from './pages/agent/WithoutFaceVerification';
-import FaceVerificationReview from './pages/agent/FaceVerificationReview';
-import Processing from './pages/agent/Processing';
 import AgentWallet from './pages/agent/AgentWallet';
 import CustomerPortal from './pages/customer/CustomerPortal';
 
