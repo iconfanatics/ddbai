@@ -211,7 +211,19 @@ export default function RoutesConfig() {
             />
           </div>
         </div>
-        <div className="flex justify-end">
+        <div className="mt-4 flex items-center gap-2">
+          <input 
+            type="checkbox" 
+            id="faceVerify"
+            className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500 cursor-pointer"
+            checked={faceVerificationRequired}
+            onChange={(e) => setFaceVerificationRequired(e.target.checked)}
+          />
+          <label htmlFor="faceVerify" className="text-sm font-semibold text-gray-700 cursor-pointer">
+            Require Face Verification for this route
+          </label>
+        </div>
+        <div className="flex justify-end mt-4">
           <button 
             className="bg-gray-900 text-white px-6 py-2 rounded font-medium shadow-sm hover:bg-gray-800"
             onClick={handleAddRoute}

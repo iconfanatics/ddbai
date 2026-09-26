@@ -3,6 +3,12 @@ import ReviewPanelModal from './ReviewPanelModal';
 
 export default function Processing({ hideHeader }: { hideHeader?: boolean }) {
   const [runningApps, setRunningApps] = useState<any[]>([]);
+  const [selectedAppForReview, setSelectedAppForReview] = useState<any>(null);
+  const [filterVerificationType, setFilterVerificationType] = useState('All');
+  const [filterFrom, setFilterFrom] = useState('');
+  const [filterTarget, setFilterTarget] = useState('');
+  const [filterCategory, setFilterCategory] = useState('');
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     fetchApplications();

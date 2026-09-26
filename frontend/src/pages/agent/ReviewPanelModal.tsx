@@ -1,4 +1,3 @@
-import React from 'react';
 
 export default function ReviewPanelModal({ app, onClose }: { app: any, onClose: () => void }) {
   if (!app) return null;
