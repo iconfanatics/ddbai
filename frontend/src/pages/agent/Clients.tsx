@@ -1,5 +1,4 @@
 import { useState, useMemo, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { VISA_ROUTE_MASTER } from '../../data/visaRouteMaster';
 import { AddClientModal } from './AddClientModal';
 import { EditApplicantModal } from './EditApplicantModal';
@@ -7,7 +6,6 @@ import { ViewClientModal } from './ViewClientModal';
 import { ReviewImagesModal } from './ReviewImagesModal';
 
 export default function Clients() {
-  const navigate = useNavigate();
   const [showAddClient, setShowAddClient] = useState(false);
   const [clients, setClients] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
