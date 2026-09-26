@@ -30,6 +30,15 @@ async function ensureSuperAdmin() {
         console.log("Automatically assigned SUPER_ADMIN to admin@visasync.com");
       }
     }
+    
+    // Cleanup orphaned runs
+    const deleted = await prisma.processingRun.deleteMany({
+      where: { application: { status: { not: 'RUNNING' } } }
+    });
+    if (deleted.count > 0) {
+      console.log(`Deleted ${deleted.count} orphaned processing runs.`);
+    }
+
   } catch(e) {
     console.error("Failed to ensure SUPER_ADMIN:", e);
   } finally {
