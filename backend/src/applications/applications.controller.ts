@@ -5,6 +5,11 @@ import { AuthGuard } from '@nestjs/passport';
 @UseGuards(AuthGuard('jwt'))
 @Controller('applications')
 export class ApplicationsController {
+  @Get('temp-fix-db')
+  async tempFixDb() {
+    return this.applicationsService.tempFixDb();
+  }
+
   constructor(private readonly applicationsService: ApplicationsService) {}
 
   /** Global passport duplicate check — searches across ALL agents */

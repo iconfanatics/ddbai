@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { VISA_ROUTE_MASTER } from '../../data/visaRouteMaster';
 import { AddClientModal } from './AddClientModal';
 import { EditApplicantModal } from './EditApplicantModal';
@@ -6,6 +7,7 @@ import { ViewClientModal } from './ViewClientModal';
 import { ReviewImagesModal } from './ReviewImagesModal';
 
 export default function Clients() {
+  const navigate = useNavigate();
   const [showAddClient, setShowAddClient] = useState(false);
   const [clients, setClients] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -187,6 +189,7 @@ export default function Clients() {
       }
       setSelectedClientIds([]);
       await fetchClients();
+      navigate('/agent');
     } catch (e) {
       console.error(e);
       alert('Some applications could not be run. Check if face verification is complete.');
@@ -529,6 +532,7 @@ export default function Clients() {
                           </div>
                           <div className="flex items-center justify-between mt-1">
                             <span className="text-green-600 text-[10px] font-semibold flex items-center"><svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"/></svg>Verify Link Available</span>
+                            <button onClick={() => simulateVerify(vSession.id)} className="text-green-600 hover:text-green-800 text-[10px] font-medium underline mr-2">Simulate Verify</button>
                             <button onClick={() => handleGenerateLink(app.id)} className="text-blue-500 hover:text-blue-700 text-[10px] font-medium underline">Regenerate</button>
                           </div>
                         </div>

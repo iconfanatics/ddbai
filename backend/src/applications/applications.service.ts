@@ -3,6 +3,18 @@ import { PrismaService } from '../prisma/prisma.service.js';
 
 @Injectable()
 export class ApplicationsService {
+  async tempFixDb() {
+    const res1 = await this.prisma.application.updateMany({
+      where: { targetCountry: 'Portugal' },
+      data: { faceVerificationRequired: true }
+    });
+    const res2 = await this.prisma.processingRun.updateMany({
+      where: { application: { targetCountry: 'Portugal' } },
+      data: { sourcePage: 'PAGE_03' }
+    });
+    return { res1, res2 };
+  }
+
   constructor(private prisma: PrismaService) {}
 
   /** Global passport check — searches ALL CustomerProfiles across all agents.
