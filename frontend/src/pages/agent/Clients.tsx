@@ -636,6 +636,7 @@ export default function Clients() {
       {showAddClient && (
         <AddClientModal
           onClose={handleModalClose}
+          onSuccess={fetchClients}
           prefilledFromCountry={selectedFromCountry}
           prefilledTargetCountry={selectedToCountry}
         />
