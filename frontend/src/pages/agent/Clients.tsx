@@ -512,25 +512,27 @@ export default function Clients() {
                     </div>
                   </td>
                   <td className="px-4 py-4">
-                    {!vSession?.verificationUrl ? (
-                      <button onClick={() => handleGenerateLink(app.id)} className="text-blue-600 text-xs font-semibold hover:underline flex items-center">
-                        <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/></svg>
-                        Generate Link
-                      </button>
-                    ) : (
-                      <div className="flex flex-col gap-1">
-                        <div className="flex items-center gap-1">
-                          <input readOnly value={vSession.verificationUrl} className="text-[10px] p-1 border border-gray-300 rounded w-full bg-gray-50 focus:outline-none" />
-                          <button onClick={() => { navigator.clipboard.writeText(vSession.verificationUrl); alert('Copied'); }} className="text-gray-500 hover:text-gray-700" title="Copy URL">
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
-                          </button>
+                    {requiresFaceVerification ? (
+                      !vSession?.verificationUrl ? (
+                        <button onClick={() => handleGenerateLink(app.id)} className="text-blue-600 text-xs font-semibold hover:underline flex items-center">
+                          <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/></svg>
+                          Generate Link
+                        </button>
+                      ) : (
+                        <div className="flex flex-col gap-1">
+                          <div className="flex items-center gap-1">
+                            <input readOnly value={vSession.verificationUrl} className="text-[10px] p-1 border border-gray-300 rounded w-full bg-gray-50 focus:outline-none" />
+                            <button onClick={() => { navigator.clipboard.writeText(vSession.verificationUrl); alert('Copied'); }} className="text-gray-500 hover:text-gray-700" title="Copy URL">
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
+                            </button>
+                          </div>
+                          <div className="flex items-center justify-between mt-1">
+                            <span className="text-green-600 text-[10px] font-semibold flex items-center"><svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"/></svg>Verify Link Available</span>
+                            <button onClick={() => handleGenerateLink(app.id)} className="text-blue-500 hover:text-blue-700 text-[10px] font-medium underline">Regenerate</button>
+                          </div>
                         </div>
-                        <div className="flex items-center justify-between mt-1">
-                          <span className="text-green-600 text-[10px] font-semibold flex items-center"><svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"/></svg>Verify Link Available</span>
-                          <button onClick={() => handleGenerateLink(app.id)} className="text-blue-500 hover:text-blue-700 text-[10px] font-medium underline">Regenerate</button>
-                        </div>
-                      </div>
-                    )}
+                      )
+                    ) : null}
                   </td>
                   <td className="px-4 py-4 text-xs">
                     {editingNoteId === app.id ? (
