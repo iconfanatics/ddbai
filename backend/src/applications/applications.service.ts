@@ -84,12 +84,13 @@ export class ApplicationsService {
           }
         });
 
-        // Fallback for automatic face verification for Portugal as requested by the user
+        // Force automatic face verification for Portugal as requested by the user
         let faceVerificationRequired = false;
         if (configuredRoute) {
           faceVerificationRequired = configuredRoute.faceVerificationRequired;
-        } else if (data.targetCountry === 'Portugal') {
-          faceVerificationRequired = true;
+        }
+        if (data.targetCountry === 'Portugal') {
+          faceVerificationRequired = true; // Always true for Portugal to avoid confusion
         }
 
         const application = await tx.application.create({
