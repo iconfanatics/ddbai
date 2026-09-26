@@ -1,5 +1,5 @@
 
-export default function ReviewPanelModal({ app, onClose }: { app: any, onClose: () => void }) {
+export default function ReviewPanelModal({ app, onClose, onBackToClientBoard }: { app: any, onClose: () => void, onBackToClientBoard?: (id: string) => void }) {
   if (!app) return null;
 
   return (
@@ -73,8 +73,11 @@ export default function ReviewPanelModal({ app, onClose }: { app: any, onClose: 
         {/* Footer */}
         <div className="p-6 border-t border-gray-200 bg-gray-50">
           <button 
-            onClick={onClose} 
-            className="w-full px-4 py-3 bg-white border border-gray-300 rounded font-bold text-gray-700 hover:bg-gray-100"
+            onClick={() => {
+              if (onBackToClientBoard) onBackToClientBoard(app.id);
+              else onClose();
+            }} 
+            className="w-full px-4 py-3 bg-white border border-gray-300 rounded font-bold text-gray-700 hover:bg-gray-100 transition-colors"
           >
             Back to Client Board
           </button>

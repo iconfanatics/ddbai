@@ -28,6 +28,23 @@ export default function Processing({ hideHeader }: { hideHeader?: boolean }) {
     setLoading(false);
   };
 
+
+  const handleBackToClientBoard = async (id: string) => {
+    try {
+      const token = localStorage.getItem('token');
+      await fetch(`/api/applications/${id}/status`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ status: 'READY' })
+      });
+      setSelectedAppForReview(null);
+      fetchApplications();
+    } catch (e) {
+      console.error(e);
+      alert('Failed to return application to Client Board');
+    }
+  };
+
   const filteredApps = runningApps.filter((app: any) => {
     if (filterVerificationType === 'Face Verification' && !app.faceVerificationRequired) return false;
     if (filterVerificationType === 'Without Face Verification' && app.faceVerificationRequired) return false;
@@ -98,7 +115,7 @@ export default function Processing({ hideHeader }: { hideHeader?: boolean }) {
         </tbody>
       </table>
         {selectedAppForReview && (
-          <ReviewPanelModal app={selectedAppForReview} onClose={() => setSelectedAppForReview(null)} />
+          <ReviewPanelModal app={selectedAppForReview} onClose={() => setSelectedAppForReview(null)} onBackToClientBoard={handleBackToClientBoard} />
         )}
     </div>
   );
