@@ -504,10 +504,11 @@ export default function Clients() {
                   </td>
                   <td className="px-4 py-4">
                     <div className="flex flex-col gap-1 items-start">
-                      {requiresFaceVerification && (!vSession || vSession.status === 'PENDING') && (
+                      {requiresFaceVerification && (!vSession || vSession.status === 'PENDING') ? (
                         <span className="px-2 py-1 bg-yellow-100 text-yellow-800 text-[10px] font-semibold rounded whitespace-nowrap">Face Verification Pending</span>
+                      ) : (
+                        <span className="px-2 py-1 bg-blue-100 text-blue-800 text-[10px] font-semibold rounded">Processing</span>
                       )}
-                      <span className="px-2 py-1 bg-blue-100 text-blue-800 text-[10px] font-semibold rounded">Processing</span>
                     </div>
                   </td>
                   <td className="px-4 py-4">

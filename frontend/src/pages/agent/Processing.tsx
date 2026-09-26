@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 
-export default function Processing() {
+export default function Processing({ hideHeader }: { hideHeader?: boolean }) {
   const [runningApps, setRunningApps] = useState<any[]>([]);
 
   useEffect(() => {
@@ -20,8 +20,8 @@ export default function Processing() {
   };
 
   return (
-    <div className="p-8">
-      <h1 className="text-2xl font-bold mb-6">Processing (Page 04)</h1>
+    <div className={hideHeader ? "p-0" : "p-8"}>
+      {!hideHeader && <h1 className="text-2xl font-bold mb-6">Processing (Page 04)</h1>}
       <table className="min-w-full bg-white rounded-lg shadow overflow-hidden border border-gray-200">
         <thead className="bg-gray-50">
           <tr>
