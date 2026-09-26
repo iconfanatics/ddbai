@@ -201,17 +201,21 @@ export default function Clients() {
     try {
       const token = localStorage.getItem('token');
       for (const id of selectedClientIds) {
-        await fetch(`/api/applications/${id}/run`, {
+        const res = await fetch(`/api/applications/${id}/run`, {
           method: 'POST',
           headers: { Authorization: `Bearer ${token}` }
         });
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.message || 'Failed to run application');
+        }
       }
       setSelectedClientIds([]);
       await fetchClients();
       navigate('/agent');
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
-      alert('Some applications could not be run. Check if face verification is complete.');
+      alert(`Error running application: ${e.message}`);
     } finally {
       setLoadingAction(false);
     }
