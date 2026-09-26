@@ -19,8 +19,10 @@ export default function Login() {
       
       localStorage.setItem('token', data.access_token);
       
-      if (email.includes('admin')) navigate('/admin');
-      else navigate('/agent');
+      const userRole = email.includes('admin') ? 'admin' : 'agent';
+      localStorage.setItem('role', userRole);
+      
+      navigate(`/${userRole}`);
     } catch (e: any) {
       alert(e.message);
     }

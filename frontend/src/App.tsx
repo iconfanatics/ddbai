@@ -65,6 +65,7 @@ function App() {
         <Route path="/customer/*" element={<CustomerPortal />} />
 
         <Route path="/" element={<Navigate to="/login" />} />
+        <Route path="*" element={<Navigate to="/login" />} />
       </Routes>
     </Router>
   );
