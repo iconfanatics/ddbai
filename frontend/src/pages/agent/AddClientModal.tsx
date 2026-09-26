@@ -1,20 +1,81 @@
 import { useState, useMemo } from 'react';
 import { VISA_ROUTE_MASTER } from '../../data/visaRouteMaster';
 
-// Mock OCR function
-const mockOCR = (_file: File) => new Promise<any>(resolve => {
-  setTimeout(() => {
-    resolve({
-      firstName: "JYOTI",
-      lastName: "SARKAR",
+import Tesseract from 'tesseract.js';
+
+// Real OCR function
+const extractPassportData = async (file: File) => {
+  try {
+    const worker = await Tesseract.createWorker('eng');
+    const ret = await worker.recognize(file);
+    const text = ret.data.text;
+    await worker.terminate();
+
+    // Basic MRZ parsing
+    const lines = text.split('\n').map(l => l.replace(/\s+/g, '').replace(/O/g, '0')); // Replace space and O with 0 in MRZ
+    let mrz1 = '';
+    let mrz2 = '';
+    for (let i = 0; i < lines.length; i++) {
+      if (lines[i].startsWith('P<') || lines[i].startsWith('P=')) {
+        mrz1 = lines[i];
+        if (i + 1 < lines.length) mrz2 = lines[i + 1];
+        break;
+      }
+    }
+
+    if (mrz1 && mrz2 && mrz1.length >= 30 && mrz2.length >= 30) {
+      // Parse MRZ
+      const namePart = mrz1.substring(5).split('<<');
+      let lastName = namePart[0].replace(/</g, ' ');
+      let firstName = namePart.length > 1 ? namePart[1].replace(/</g, ' ') : '';
+      
+      const passportNumber = mrz2.substring(0, 9).replace(/</g, '');
+      const nationality = mrz2.substring(10, 13);
+      
+      const dobRaw = mrz2.substring(13, 19);
+      const dobYear = parseInt(dobRaw.substring(0, 2), 10);
+      const dobFullYear = dobYear > 50 ? 1900 + dobYear : 2000 + dobYear;
+      const dateOfBirth = `${dobFullYear}-${dobRaw.substring(2, 4)}-${dobRaw.substring(4, 6)}`;
+      
+      const genderCode = mrz2.substring(20, 21);
+      const gender = genderCode === 'M' ? 'Male' : genderCode === 'F' ? 'Female' : '';
+      
+      const expRaw = mrz2.substring(21, 27);
+      const expFullYear = 2000 + parseInt(expRaw.substring(0, 2), 10);
+      const passportExpiry = `${expFullYear}-${expRaw.substring(2, 4)}-${expRaw.substring(4, 6)}`;
+
+      // Try mapping nationality code roughly
+      let natMapped = nationality;
+      if (nationality.includes('BGD')) natMapped = 'Bangladesh';
+      else if (nationality.includes('IND')) natMapped = 'India';
+      else if (nationality.includes('PAK')) natMapped = 'Pakistan';
+
+      return {
+        firstName: firstName.trim().toUpperCase() || 'UNKNOWN',
+        lastName: lastName.trim().toUpperCase() || 'UNKNOWN',
+        nationality: natMapped,
+        passportNumber: passportNumber.toUpperCase(),
+        dateOfBirth,
+        passportExpiry,
+        gender
+      };
+    }
+    
+    // Fallback if MRZ parsing fails
+    return {
+      firstName: "NOT_FOUND",
+      lastName: "NOT_FOUND",
       nationality: "Bangladesh",
-      passportNumber: "FD5445" + Math.floor(Math.random()*100),
-      dateOfBirth: "1995-01-15",
-      passportExpiry: "2030-01-09",
+      passportNumber: "NOT_FOUND",
+      dateOfBirth: "1995-01-01",
+      passportExpiry: "2030-01-01",
       gender: "Male"
-    });
-  }, 1500);
-});
+    };
+  } catch (error) {
+    console.error("OCR Error:", error);
+    throw error;
+  }
+};
 
 // A simple searchable select component
 function SearchableSelect({ options, value, onChange, placeholder = "Select..." }: { options: string[], value: string, onChange: (val: string) => void, placeholder?: string }) {
@@ -204,7 +265,7 @@ export function AddClientModal({ onClose, onSuccess, prefilledFromCountry, prefi
     setFocusedAppId(id);
 
     try {
-      const data = await mockOCR(file);
+      const data = await extractPassportData(file);
       updateApplicant(id, 'ocrData', data);
       updateApplicant(id, 'ocrAnalyzing', false);
     } catch (err) {
