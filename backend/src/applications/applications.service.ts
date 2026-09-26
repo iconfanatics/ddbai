@@ -171,6 +171,11 @@ export class ApplicationsService {
   }
 
   async updateStatus(id: string, status: string, notes?: string) {
+    if (status === 'READY') {
+      await this.prisma.processingRun.deleteMany({
+        where: { applicationId: id }
+      });
+    }
     return this.prisma.application.update({
       where: { id },
       data: { status, notes },
@@ -246,7 +251,14 @@ export class ApplicationsService {
     }
 
     if (application.processingRun) {
-      throw new BadRequestException('Application is already running');
+      if (application.status === 'RUNNING') {
+        throw new BadRequestException('Application is already running');
+      } else {
+        // Orphaned run, let's delete it so we can run again
+        await this.prisma.processingRun.delete({
+          where: { id: application.processingRun.id }
+        });
+      }
     }
 
     if (application.faceVerificationRequired && application.faceVerificationStatus !== 'VERIFIED') {
@@ -317,7 +329,7 @@ export class ApplicationsService {
       }
     });
 
-    const url = `https://face-verification-app.fastjourney.shop/?token=${session.id}`;
+    const url = `/verify/${session.id}`;
     
     await this.prisma.verificationSession.update({
       where: { id: session.id },
