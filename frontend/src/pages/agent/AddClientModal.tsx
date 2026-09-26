@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react';
 import { VISA_ROUTE_MASTER } from '../../data/visaRouteMaster';
 
 // Mock OCR function
-const mockOCR = (file: File) => new Promise<any>(resolve => {
+const mockOCR = (_file: File) => new Promise<any>(resolve => {
   setTimeout(() => {
     resolve({
       firstName: "JYOTI",
@@ -316,7 +316,7 @@ export function AddClientModal({ onClose, onSuccess, prefilledFromCountry, prefi
       const fromData = VISA_ROUTE_MASTER.find(c => c.name === fromCountry);
       if (fromData) {
         const targetData = fromData.toCountries.find(t => t.name === targetCountry);
-        if (targetData && targetData.faceVerification) {
+        if (targetData && targetCountry === 'Portugal') {
           return true;
         }
       }
