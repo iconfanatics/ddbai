@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import ReviewPanelModal from './ReviewPanelModal';
 
 export default function Processing({ hideHeader }: { hideHeader?: boolean }) {
   const [runningApps, setRunningApps] = useState<any[]>([]);
@@ -52,5 +53,8 @@ export default function Processing({ hideHeader }: { hideHeader?: boolean }) {
         </tbody>
       </table>
     </div>
+        {selectedAppForReview && (
+          <ReviewPanelModal app={selectedAppForReview} onClose={() => setSelectedAppForReview(null)} />
+        )}
   );
 }

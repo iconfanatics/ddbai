@@ -73,6 +73,19 @@ export class ApplicationsService {
         });
 
         // Create initial application with configuration
+        // Find configured route to determine face verification
+        const configuredRoute = await tx.configuredRoute.findFirst({
+          where: {
+            fromCountry: data.fromCountry,
+            toCountry: data.targetCountry,
+            visaCenter: data.applicationCenter,
+            visaCategory: data.category,
+            subCategory: data.subCategory
+          }
+        });
+
+        const faceVerificationRequired = configuredRoute ? configuredRoute.faceVerificationRequired : false;
+
         const application = await tx.application.create({
           data: {
             customerId: profile.id,
@@ -82,7 +95,7 @@ export class ApplicationsService {
             applicationCenter: data.applicationCenter || null,
             category: data.category || null,
             subCategory: data.subCategory || null,
-            faceVerificationRequired: data.targetCountry === 'United Arab Emirates' || data.targetCountry === 'Portugal',
+            faceVerificationRequired: faceVerificationRequired,
           },
         });
 

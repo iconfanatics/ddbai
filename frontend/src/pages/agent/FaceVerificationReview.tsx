@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import ReviewPanelModal from './ReviewPanelModal';
 
 export default function FaceVerificationReview({ hideHeader }: { hideHeader?: boolean }) {
   const [runningApps, setRunningApps] = useState<any[]>([]);
@@ -53,5 +54,8 @@ export default function FaceVerificationReview({ hideHeader }: { hideHeader?: bo
         </tbody>
       </table>
     </div>
+        {selectedAppForReview && (
+          <ReviewPanelModal app={selectedAppForReview} onClose={() => setSelectedAppForReview(null)} />
+        )}
   );
 }

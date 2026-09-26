@@ -143,7 +143,8 @@ export class AdminService {
         subCategory: data.subCategory,
         scheduleDate: data.scheduleDate,
         scheduleTime: data.scheduleTime,
-        status: data.status || 'READY'
+        status: data.status || 'READY',
+        faceVerificationRequired: data.faceVerificationRequired || false
       }
     });
   }

@@ -13,6 +13,7 @@ export default function RoutesConfig() {
   
   const [scheduleDate, setScheduleDate] = useState('');
   const [scheduleTime, setScheduleTime] = useState('');
+  const [faceVerificationRequired, setFaceVerificationRequired] = useState(false);
 
   const [loading, setLoading] = useState(true);
 
@@ -95,6 +96,7 @@ export default function RoutesConfig() {
           subCategory: selectedSubCategory,
           scheduleDate: scheduleDate,
           scheduleTime: scheduleTime,
+          faceVerificationRequired: faceVerificationRequired,
           status: 'READY' 
         })
       });

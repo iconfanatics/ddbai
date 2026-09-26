@@ -308,6 +308,7 @@ model ConfiguredRoute {
   scheduleDate   String?   @map("schedule_date")
   scheduleTime   String?   @map("schedule_time")
   status         String    @default("READY")
+  faceVerificationRequired Boolean @default(false)
   createdAt      DateTime  @default(now()) @map("created_at")
   updatedAt      DateTime  @updatedAt @map("updated_at")
 }
