@@ -76,12 +76,13 @@ export class ApplicationsService {
         const application = await tx.application.create({
           data: {
             customerId: profile.id,
-            status: 'DRAFT',
+            status: 'READY',
             fromCountry: data.fromCountry || null,
             targetCountry: data.targetCountry || null,
             applicationCenter: data.applicationCenter || null,
             category: data.category || null,
             subCategory: data.subCategory || null,
+            faceVerificationRequired: data.targetCountry === 'United Arab Emirates' || data.targetCountry === 'Portugal',
           },
         });
 
