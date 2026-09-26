@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 
 const ITEMS_PER_PAGE = 10;
 
@@ -6,6 +6,10 @@ export default function BookingQueue() {
   const [bookings, setBookings] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [currentPage, setCurrentPage] = useState(1);
+  
+  // Filters
+  const [filterFrom, setFilterFrom] = useState('');
+  const [filterTarget, setFilterTarget] = useState('');
 
   const fetchBookings = async () => {
     setLoading(true);
@@ -16,7 +20,9 @@ export default function BookingQueue() {
       });
       if (res.ok) {
         const data = await res.json();
-        setBookings(data);
+        // PDF says: Shudhumatro jesob application successfully booked hobe seguloi ekhane asbe
+        const confirmedBookings = data.filter((b: any) => b.status === 'CONFIRMED');
+        setBookings(confirmedBookings);
       }
     } catch (e) {
       console.error('Failed to fetch bookings', e);
@@ -29,41 +35,54 @@ export default function BookingQueue() {
     fetchBookings();
   }, []);
 
-  const totalPages = Math.ceil(bookings.length / ITEMS_PER_PAGE);
-  const paginated = bookings.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE);
+  const filteredBookings = useMemo(() => {
+    return bookings.filter(b => {
+      const app = b.application || {};
+      if (filterFrom && !app.fromCountry?.toLowerCase().includes(filterFrom.toLowerCase())) return false;
+      if (filterTarget && !app.targetCountry?.toLowerCase().includes(filterTarget.toLowerCase())) return false;
+      return true;
+    });
+  }, [bookings, filterFrom, filterTarget]);
 
-  // Status mappings
-  const successCount = bookings.filter(b => b.status === 'CONFIRMED').length;
-  const pdfCount = bookings.filter(b => b.status === 'CONFIRMED').length; // Mock: PDF ready if confirmed
+  const totalPages = Math.ceil(filteredBookings.length / ITEMS_PER_PAGE) || 1;
+  const paginated = filteredBookings.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE);
 
   const exportToCSV = () => {
-    const headers = ['Request ID', 'Customer', 'Target Country', 'Reference', 'Status', 'Booking Action'];
-    const csvContent = [
-      headers.join(','),
-      ...bookings.map(b => {
-        const custName = b.application?.customer?.user?.firstName ? `${b.application.customer.user.firstName} ${b.application.customer.user.lastName}` : 'N/A';
-        const target = b.application?.notes?.replace('Target: ', '') || 'N/A';
-        return `"${b.id}","${custName}","${target}","${b.referenceNumber || ''}","${b.status}","${b.status === 'CONFIRMED' ? 'SUCCESS' : 'PENDING'}"`;
-      })
-    ].join('\n');
-
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.setAttribute('download', 'booking_queue.csv');
+    const header = "Customer,Target Country,Reference,Status\n";
+    const rows = filteredBookings.map(b => {
+      const custName = b.application?.customer?.user?.firstName 
+        ? `${b.application.customer.user.firstName} ${b.application.customer.user.lastName}` 
+        : 'Unknown';
+      const target = b.application?.targetCountry || 'N/A';
+      return `"${custName}","${target}","${b.referenceNumber || ''}","Booked"`;
+    });
+    const csvContent = "data:text/csv;charset=utf-8," + header + rows.join("\n");
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute('href', encodedUri);
+    link.setAttribute('download', 'booking_request_queue.csv');
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
   };
 
-  const viewPDF = (booking: any) => {
+  const handleApplyFilter = () => {
+    setCurrentPage(1); // Filtering automatically happens via useMemo, just reset page
+  };
+
+  const handleClearFilter = () => {
+    setFilterFrom('');
+    setFilterTarget('');
+    setCurrentPage(1);
+  };
+
+  const downloadPDF = (booking: any) => {
     const custName = booking.application?.customer?.user?.firstName 
       ? `${booking.application.customer.user.firstName} ${booking.application.customer.user.lastName}` 
       : 'Applicant';
-    const target = booking.application?.notes?.replace('Target: ', '') || 'Destination';
+    const target = booking.application?.targetCountry || 'Destination';
     
-    // Create a mock PDF representation using print window
+    // Create a mock PDF representation using print window to auto download/print
     const printWindow = window.open('', '_blank');
     if (printWindow) {
       printWindow.document.write(`
@@ -77,14 +96,14 @@ export default function BookingQueue() {
               .label { font-weight: bold; width: 150px; display: inline-block; }
             </style>
           </head>
-          <body>
+          <body onload="window.print(); window.close();">
             <div class="header">
               <h1>Visa Booking Confirmation</h1>
               <p>Reference: ${booking.referenceNumber || 'N/A'}</p>
             </div>
             <div class="row"><span class="label">Customer Name:</span> ${custName}</div>
             <div class="row"><span class="label">Target Country:</span> ${target}</div>
-            <div class="row"><span class="label">Status:</span> ${booking.status}</div>
+            <div class="row"><span class="label">Status:</span> Booked</div>
             <div class="row"><span class="label">Date:</span> ${new Date(booking.createdAt).toLocaleString()}</div>
             <div style="margin-top: 50px; text-align: center; color: #666; font-size: 12px;">
               Generated by DDBAI Visa System
@@ -93,12 +112,11 @@ export default function BookingQueue() {
         </html>
       `);
       printWindow.document.close();
-      printWindow.print();
     }
   };
 
   return (
-    <div className="p-6 bg-white min-h-screen text-gray-800 text-sm">
+    <div className="p-8 bg-gray-50 min-h-screen text-gray-800 text-sm">
       {/* Header */}
       <div className="flex justify-between items-center mb-6">
         <div>
@@ -108,86 +126,117 @@ export default function BookingQueue() {
         <div className="flex gap-3">
           <button 
             onClick={fetchBookings}
-            className="px-4 py-2 bg-white border border-gray-300 text-gray-700 font-semibold rounded shadow-sm hover:bg-gray-50 flex items-center gap-2"
+            className="px-4 py-2 bg-white border border-gray-300 text-blue-600 font-semibold rounded shadow-sm hover:bg-gray-50 flex items-center gap-2 text-xs"
           >
             {loading ? <span className="animate-spin">↻</span> : <span>↻</span>}
             Refresh
           </button>
           <button 
             onClick={exportToCSV}
-            className="px-4 py-2 bg-gray-900 text-white font-semibold rounded shadow-sm hover:bg-gray-800"
+            className="px-4 py-2 bg-gray-800 text-white font-semibold rounded shadow-sm hover:bg-gray-700 text-xs flex items-center gap-2"
           >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
             Export CSV
           </button>
         </div>
       </div>
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-3 gap-4 mb-6">
-        <div className="border border-gray-200 rounded-lg p-4 shadow-sm bg-white">
-          <p className="text-xs text-gray-500 uppercase font-semibold mb-1">Total Requests</p>
-          <div className="flex items-baseline gap-2">
-            <span className="text-3xl font-bold text-gray-900">{bookings.length}</span>
-          </div>
+      <div className="grid grid-cols-3 gap-6 mb-8">
+        <div className="border border-gray-200 rounded p-6 shadow-sm bg-white flex flex-col items-center justify-center">
+          <p className="text-[10px] text-gray-500 uppercase font-bold tracking-wider mb-2">Total Requests</p>
+          <span className="text-4xl font-bold text-blue-600">{bookings.length}</span>
         </div>
-        <div className="border border-gray-200 rounded-lg p-4 shadow-sm bg-white">
-          <p className="text-xs text-gray-500 uppercase font-semibold mb-1">Confirmed</p>
-          <div className="flex items-baseline gap-2">
-            <span className="text-3xl font-bold text-green-600">{successCount}</span>
-          </div>
+        <div className="border border-gray-200 rounded p-6 shadow-sm bg-white flex flex-col items-center justify-center relative">
+          <p className="text-[10px] text-gray-500 uppercase font-bold tracking-wider mb-2">Confirmed</p>
+          <span className="text-4xl font-bold text-green-500">{filteredBookings.length}</span>
+          <div className="absolute top-4 right-4 text-green-500 bg-green-100 rounded-full p-1"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"/></svg></div>
         </div>
-        <div className="border border-gray-200 rounded-lg p-4 shadow-sm bg-white">
-          <p className="text-xs text-gray-500 uppercase font-semibold mb-1">PDF Ready</p>
-          <div className="flex items-baseline gap-2">
-            <span className="text-3xl font-bold text-blue-600">{pdfCount}</span>
-          </div>
+        <div className="border border-gray-200 rounded p-6 shadow-sm bg-white flex flex-col items-center justify-center relative">
+          <p className="text-[10px] text-gray-500 uppercase font-bold tracking-wider mb-2">PDF Ready</p>
+          <span className="text-4xl font-bold text-blue-500">{filteredBookings.length}</span>
+          <div className="absolute top-4 right-4 text-blue-500 bg-blue-100 rounded p-1"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg></div>
+        </div>
+      </div>
+
+      {/* Filters */}
+      <div className="bg-white border border-gray-200 rounded p-4 mb-6 flex items-end gap-4 shadow-sm">
+        <div className="flex-1">
+          <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">From Country</label>
+          <select className="w-full border border-gray-300 rounded p-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500" value={filterFrom} onChange={e => setFilterFrom(e.target.value)}>
+            <option value="">All origins</option>
+            <option value="UAE">UAE</option>
+            <option value="India">India</option>
+            <option value="Angola">Angola</option>
+            <option value="Guinea-Bissau">Guinea-Bissau</option>
+          </select>
+        </div>
+        <div className="flex-1">
+          <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Target Country</label>
+          <select className="w-full border border-gray-300 rounded p-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500" value={filterTarget} onChange={e => setFilterTarget(e.target.value)}>
+            <option value="">All destinations</option>
+            <option value="Portugal">Portugal</option>
+            <option value="Germany">Germany</option>
+            <option value="France">France</option>
+            <option value="Latvia">Latvia</option>
+            <option value="Bulgaria">Bulgaria</option>
+          </select>
+        </div>
+        <div className="flex gap-2">
+          <button onClick={handleApplyFilter} className="bg-blue-600 text-white px-4 py-2 rounded text-xs font-bold hover:bg-blue-700 flex items-center gap-1 shadow-sm">
+            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"/></svg>
+            Apply Filter
+          </button>
+          <button onClick={handleClearFilter} className="bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded text-xs font-bold hover:bg-gray-50 shadow-sm">
+            Clear
+          </button>
         </div>
       </div>
 
       {/* Table */}
-      <div className="bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden">
-        <table className="min-w-full divide-y divide-gray-200">
-          <thead className="bg-gray-50 text-xs text-gray-500 uppercase tracking-wider font-semibold">
+      <div className="bg-white border border-gray-200 rounded shadow-sm overflow-hidden">
+        <table className="min-w-full divide-y divide-gray-200 text-left">
+          <thead className="bg-gray-50 text-[10px] text-gray-500 uppercase tracking-wider font-bold">
             <tr>
-              <th className="px-6 py-4 text-left">Customer</th>
-              <th className="px-6 py-4 text-left">Target Country</th>
-              <th className="px-6 py-4 text-left">Reference</th>
-              <th className="px-6 py-4 text-left">Status</th>
+              <th className="px-6 py-4 w-16">#</th>
+              <th className="px-6 py-4">Customer</th>
+              <th className="px-6 py-4">Target Country</th>
+              <th className="px-6 py-4">Reference</th>
+              <th className="px-6 py-4">Status</th>
               <th className="px-6 py-4 text-center">Action</th>
             </tr>
           </thead>
-          <tbody className="bg-white divide-y divide-gray-200">
-            {loading && bookings.length === 0 ? (
-              <tr><td colSpan={5} className="px-6 py-8 text-center text-gray-500">Loading bookings...</td></tr>
+          <tbody className="bg-white divide-y divide-gray-100 text-xs">
+            {loading && filteredBookings.length === 0 ? (
+              <tr><td colSpan={6} className="px-6 py-8 text-center text-gray-500">Loading booking queue...</td></tr>
             ) : paginated.length === 0 ? (
-              <tr><td colSpan={5} className="px-6 py-8 text-center text-gray-500">No booking requests found.</td></tr>
-            ) : paginated.map((b) => (
+              <tr><td colSpan={6} className="px-6 py-8 text-center text-gray-500">No confirmed booking requests found.</td></tr>
+            ) : paginated.map((b, idx) => (
               <tr key={b.id} className="hover:bg-gray-50">
-                <td className="px-6 py-4 font-medium text-gray-900">
+                <td className="px-6 py-3 font-medium text-gray-500">
+                  {(currentPage - 1) * ITEMS_PER_PAGE + idx + 1}
+                </td>
+                <td className="px-6 py-3 font-medium text-gray-900">
                   {b.application?.customer?.user?.firstName} {b.application?.customer?.user?.lastName}
                 </td>
-                <td className="px-6 py-4 text-gray-600">
-                  {b.application?.notes?.replace('Target: ', '') || 'N/A'}
+                <td className="px-6 py-3 text-gray-600">
+                  {b.application?.fromCountry || 'Any'} &rarr; {b.application?.targetCountry || 'N/A'}
                 </td>
-                <td className="px-6 py-4 font-mono text-xs text-gray-500">
+                <td className="px-6 py-3 font-mono text-[11px] text-gray-600 uppercase tracking-wider">
                   {b.referenceNumber || '-'}
                 </td>
-                <td className="px-6 py-4">
-                  <span className={`px-2 py-1 text-xs font-semibold rounded ${
-                    b.status === 'CONFIRMED' ? 'bg-green-100 text-green-800' : 
-                    b.status === 'FAILED' ? 'bg-red-100 text-red-800' : 
-                    'bg-yellow-100 text-yellow-800'
-                  }`}>
-                    {b.status}
+                <td className="px-6 py-3">
+                  <span className="px-2.5 py-1 text-[10px] font-bold rounded bg-green-100 text-green-700">
+                    Booked
                   </span>
                 </td>
-                <td className="px-6 py-4 text-center">
+                <td className="px-6 py-3 text-center">
                   <button 
-                    onClick={() => viewPDF(b)}
-                    disabled={b.status !== 'CONFIRMED'}
-                    className="text-blue-600 hover:text-blue-800 font-semibold text-xs border border-gray-200 px-3 py-1.5 rounded disabled:opacity-50 disabled:cursor-not-allowed"
+                    onClick={() => downloadPDF(b)}
+                    className="text-blue-600 hover:text-blue-800 font-bold text-[10px] border border-blue-200 bg-blue-50 px-3 py-1.5 rounded flex items-center justify-center gap-1 mx-auto"
                   >
-                    View PDF
+                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"/></svg>
+                    PDF Available
                   </button>
                 </td>
               </tr>
@@ -196,28 +245,42 @@ export default function BookingQueue() {
         </table>
         
         {/* Pagination */}
-        {totalPages > 1 && (
-          <div className="bg-white px-6 py-4 border-t border-gray-200 flex items-center justify-between">
-            <div className="text-sm text-gray-500">
-              Showing <span className="font-medium">{(currentPage - 1) * ITEMS_PER_PAGE + 1}</span> to <span className="font-medium">{Math.min(currentPage * ITEMS_PER_PAGE, bookings.length)}</span> of <span className="font-medium">{bookings.length}</span> results
+        {filteredBookings.length > 0 && (
+          <div className="bg-white px-6 py-3 border-t border-gray-200 flex items-center justify-between">
+            <div className="text-xs text-gray-500">
+              Showing <span className="font-bold">{(currentPage - 1) * ITEMS_PER_PAGE + 1}</span> to <span className="font-bold">{Math.min(currentPage * ITEMS_PER_PAGE, filteredBookings.length)}</span> of <span className="font-bold">{filteredBookings.length}</span> requests
             </div>
             <div className="flex gap-1">
+              <button 
+                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                disabled={currentPage === 1}
+                className="px-2 py-1 text-gray-500 hover:bg-gray-100 rounded disabled:opacity-50"
+              >
+                &lt;
+              </button>
               {Array.from({ length: totalPages }).map((_, i) => {
                 const page = i + 1;
                 return (
                   <button
                     key={page}
                     onClick={() => setCurrentPage(page)}
-                    className={`px-3 py-1 text-xs font-semibold rounded border ${
+                    className={`w-6 h-6 flex items-center justify-center text-xs font-bold rounded ${
                       currentPage === page 
-                        ? 'bg-blue-50 text-blue-600 border-blue-200' 
-                        : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'
+                        ? 'bg-blue-600 text-white' 
+                        : 'bg-white text-gray-600 hover:bg-gray-100'
                     }`}
                   >
                     {page}
                   </button>
                 );
               })}
+              <button 
+                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                disabled={currentPage === totalPages}
+                className="px-2 py-1 text-gray-500 hover:bg-gray-100 rounded disabled:opacity-50"
+              >
+                &gt;
+              </button>
             </div>
           </div>
         )}
