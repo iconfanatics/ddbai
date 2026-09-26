@@ -176,6 +176,25 @@ export default function Clients() {
     }
   };
 
+
+  const simulateVerify = async (token: string) => {
+    try {
+      const res = await fetch('/api/applications/webhook/face-verification', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token, status: 'VERIFIED', matchScore: 99.9, notes: 'Simulated verification' })
+      });
+      if (res.ok) {
+        alert('Verification simulated successfully!');
+        window.location.reload();
+      } else {
+        alert('Simulation failed.');
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
   const handleBulkRun = async () => {
     if (selectedClientIds.length === 0) return;
     setLoadingAction(true);
