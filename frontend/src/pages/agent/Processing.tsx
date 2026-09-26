@@ -15,6 +15,7 @@ export default function Processing({ hideHeader }: { hideHeader?: boolean }) {
   }, []);
 
   const fetchApplications = async () => {
+    setLoading(true);
     try {
       const res = await fetch('/api/applications', {
         headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
@@ -24,11 +25,46 @@ export default function Processing({ hideHeader }: { hideHeader?: boolean }) {
     } catch (e) {
       console.error(e);
     }
+    setLoading(false);
   };
+
+  const filteredApps = runningApps.filter((app: any) => {
+    if (filterVerificationType === 'Face Verification' && !app.faceVerificationRequired) return false;
+    if (filterVerificationType === 'Without Face Verification' && app.faceVerificationRequired) return false;
+    if (filterFrom && !app.fromCountry?.toLowerCase().includes(filterFrom.toLowerCase())) return false;
+    if (filterTarget && !app.targetCountry?.toLowerCase().includes(filterTarget.toLowerCase())) return false;
+    if (filterCategory && !app.category?.toLowerCase().includes(filterCategory.toLowerCase())) return false;
+    return true;
+  });
 
   return (
     <div className={hideHeader ? "p-0" : "p-8"}>
       {!hideHeader && <h1 className="text-2xl font-bold mb-6">Processing (Page 04)</h1>}
+      
+      {/* Filters */}
+      <div className="bg-gray-50 p-4 rounded mb-6 border border-gray-200 grid grid-cols-4 gap-4">
+        <div>
+          <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Verification Type</label>
+          <select value={filterVerificationType} onChange={e => setFilterVerificationType(e.target.value)} className="w-full border border-gray-300 rounded p-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500">
+            <option>All</option>
+            <option>Without Face Verification</option>
+            <option>Face Verification</option>
+          </select>
+        </div>
+        <div>
+          <label className="block text-xs font-bold text-gray-500 uppercase mb-1">From Country</label>
+          <input type="text" value={filterFrom} onChange={e => setFilterFrom(e.target.value)} placeholder="e.g. UAE" className="w-full border border-gray-300 rounded p-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500" />
+        </div>
+        <div>
+          <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Target Country</label>
+          <input type="text" value={filterTarget} onChange={e => setFilterTarget(e.target.value)} placeholder="e.g. Portugal" className="w-full border border-gray-300 rounded p-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500" />
+        </div>
+        <div>
+          <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Category</label>
+          <input type="text" value={filterCategory} onChange={e => setFilterCategory(e.target.value)} placeholder="e.g. Work Visa" className="w-full border border-gray-300 rounded p-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500" />
+        </div>
+      </div>
+
       <table className="min-w-full bg-white rounded-lg shadow overflow-hidden border border-gray-200">
         <thead className="bg-gray-50">
           <tr>
@@ -42,19 +78,22 @@ export default function Processing({ hideHeader }: { hideHeader?: boolean }) {
           </tr>
         </thead>
         <tbody className="divide-y divide-gray-200">
-          {runningApps.map((app) => (
+          {filteredApps.map((app) => (
             <tr key={app.id}>
               <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{app.id.split('-')[0]}</td>
               <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{app.customer?.user?.firstName} {app.customer?.user?.lastName}</td>
-              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{app.fromCountry} &rarr; {app.targetCountry}</td>
+              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{app.fromCountry || 'Any'} &rarr; {app.targetCountry}</td>
               <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{app.applicationCenter} / {app.category}</td>
               <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{app.faceVerificationRequired ? 'Required / Verified' : 'Not Required'}</td>
-              <td className="px-6 py-4 whitespace-nowrap text-sm font-semibold text-blue-600">Running / Active</td>
-              <td className="px-6 py-4 whitespace-nowrap text-sm"><button className="text-indigo-600 font-bold hover:underline">Open</button></td>
+              <td className="px-6 py-4 whitespace-nowrap text-sm font-semibold text-blue-600">Processing</td>
+              <td className="px-6 py-4 whitespace-nowrap text-sm"><button onClick={() => setSelectedAppForReview(app)} className="bg-blue-100 text-blue-700 px-4 py-1.5 rounded text-xs font-bold hover:bg-blue-200">Review</button></td>
             </tr>
           ))}
-          {runningApps.length === 0 && (
-            <tr><td colSpan={7} className="px-6 py-8 text-center text-gray-500">No applications are currently processing.</td></tr>
+          {!loading && filteredApps.length === 0 && (
+            <tr><td colSpan={7} className="px-6 py-8 text-center text-gray-500">No applications match the filters.</td></tr>
+          )}
+          {loading && (
+            <tr><td colSpan={7} className="px-6 py-8 text-center text-gray-500">Loading...</td></tr>
           )}
         </tbody>
       </table>
