@@ -212,7 +212,6 @@ export default function Clients() {
       }
       setSelectedClientIds([]);
       await fetchClients();
-      navigate('/agent');
     } catch (e: any) {
       console.error(e);
       alert(`Error running application: ${e.message}`);
