@@ -52,9 +52,9 @@ export default function Processing({ hideHeader }: { hideHeader?: boolean }) {
           )}
         </tbody>
       </table>
-    </div>
         {selectedAppForReview && (
           <ReviewPanelModal app={selectedAppForReview} onClose={() => setSelectedAppForReview(null)} />
         )}
+    </div>
   );
 }

@@ -48,9 +48,9 @@ export default function WithoutFaceVerification({ hideHeader }: { hideHeader?: b
           )}
         </tbody>
       </table>
-    </div>
         {selectedAppForReview && (
           <ReviewPanelModal app={selectedAppForReview} onClose={() => setSelectedAppForReview(null)} />
         )}
+    </div>
   );
 }
