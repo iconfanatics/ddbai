@@ -72,6 +72,11 @@ services:
       context: ./frontend
     ports:
       - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - caddy_data:/data
+      - caddy_config:/config
     restart: always
     networks:
       - visasync_net

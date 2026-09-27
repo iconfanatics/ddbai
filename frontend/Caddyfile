@@ -1,0 +1,19 @@
+visaoraworld.com, www.visaoraworld.com {
+    root * /srv
+    file_server
+    try_files {path} /index.html
+
+    handle_path /api/* {
+        reverse_proxy backend-api:3001
+    }
+}
+
+:80 {
+    root * /srv
+    file_server
+    try_files {path} /index.html
+
+    handle_path /api/* {
+        reverse_proxy backend-api:3001
+    }
+}
