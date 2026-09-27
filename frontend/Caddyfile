@@ -3,7 +3,8 @@ visaoraworld.com, www.visaoraworld.com {
     file_server
     try_files {path} /index.html
 
-    handle_path /api/* {
+    route /api/* {
+        uri strip_prefix /api
         reverse_proxy backend-api:3001
     }
 }
@@ -13,7 +14,8 @@ visaoraworld.com, www.visaoraworld.com {
     file_server
     try_files {path} /index.html
 
-    handle_path /api/* {
+    route /api/* {
+        uri strip_prefix /api
         reverse_proxy backend-api:3001
     }
 }
