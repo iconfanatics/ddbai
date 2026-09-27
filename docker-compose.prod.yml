@@ -87,3 +87,5 @@ networks:
 volumes:
   prod_db_data:
   prod_minio_data:
+  caddy_data:
+  caddy_config:
