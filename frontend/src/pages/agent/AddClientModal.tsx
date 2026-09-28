@@ -175,6 +175,13 @@ export function AddClientModal({ onClose, onSuccess, prefilledFromCountry, prefi
   const [fromCountry, setFromCountry] = useState(prefilledFromCountry || '');
   const [targetCountry, setTargetCountry] = useState(prefilledTargetCountry || '');
 
+
+  const fromOptions = useMemo(() => VISA_ROUTE_MASTER.map(c => c.name), []);
+  const toOptions = useMemo(() => {
+    if (!fromCountry) return [];
+    return VISA_ROUTE_MASTER.find(c => c.name === fromCountry)?.toCountries.map(t => t.name) || [];
+  }, [fromCountry]);
+
   // Step 2 State
   const [applicationCenter, setApplicationCenter] = useState('');
   const [category, setCategory] = useState('');
@@ -433,11 +440,11 @@ export function AddClientModal({ onClose, onSuccess, prefilledFromCountry, prefi
                 <div className="grid grid-cols-2 gap-6">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">From Country</label>
-                    <SearchableSelect options={COUNTRY_MASTER_LIST} value={fromCountry} onChange={setFromCountry} placeholder="Select Origin..." />
+                    <SearchableSelect options={fromOptions} value={fromCountry} onChange={setFromCountry} placeholder="Select Origin..." />
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Target Country</label>
-                    <SearchableSelect options={COUNTRY_MASTER_LIST} value={targetCountry} onChange={setTargetCountry} placeholder="Select Destination..." />
+                    <SearchableSelect options={toOptions} value={targetCountry} onChange={setTargetCountry} placeholder="Select Destination..." />
                   </div>
                 </div>
 

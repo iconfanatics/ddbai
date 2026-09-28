@@ -165,18 +165,21 @@ export default function BookingQueue() {
           <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">From Country</label>
           <select className="w-full border border-gray-300 rounded p-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500" value={filterFrom} onChange={e => setFilterFrom(e.target.value)}>
             <option value="">All origins</option>
-            {Array.from(new Set(bookings.map(b => b.application?.fromCountry).filter(Boolean))).map(c => (
-              <option key={c} value={c}>{c}</option>
-            ))}
+            <option value="UAE">UAE</option>
+            <option value="India">India</option>
+            <option value="Angola">Angola</option>
+            <option value="Guinea-Bissau">Guinea-Bissau</option>
           </select>
         </div>
         <div className="flex-1">
           <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Target Country</label>
           <select className="w-full border border-gray-300 rounded p-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500" value={filterTarget} onChange={e => setFilterTarget(e.target.value)}>
             <option value="">All destinations</option>
-            {Array.from(new Set(bookings.map(b => b.application?.targetCountry).filter(Boolean))).map(c => (
-              <option key={c} value={c}>{c}</option>
-            ))}
+            <option value="Portugal">Portugal</option>
+            <option value="Germany">Germany</option>
+            <option value="France">France</option>
+            <option value="Latvia">Latvia</option>
+            <option value="Bulgaria">Bulgaria</option>
           </select>
         </div>
         <div className="flex gap-2">
