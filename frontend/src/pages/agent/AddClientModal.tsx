@@ -135,9 +135,6 @@ function SearchableSelect({ options, value, onChange, placeholder = "Select..." 
   );
 }
 
-const COUNTRY_MASTER_LIST = [
-  "United Arab Emirates", "Portugal", "India", "Bangladesh", "Germany", "Angola", "Guinea-Bissau", "Senegal", "Latvia", "Bulgaria", "France", "United States", "United Kingdom", "Canada", "Australia", "Saudi Arabia", "Oman", "Qatar", "Kuwait", "Bahrain"
-].sort();
 
 interface Applicant {
   id: string;
