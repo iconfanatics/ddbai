@@ -599,7 +599,7 @@ export function AddClientModal({ onClose, onSuccess, prefilledFromCountry, prefi
                           <div>
                             <label className="block text-xs text-gray-600 mb-1 font-semibold">Nationality</label>
                             <div className={`${app.isAutoFilled && app.ocrData?.nationality === app.nationality ? 'ring-1 ring-green-200 rounded' : ''}`}>
-                              <SearchableSelect options={COUNTRY_MASTER_LIST} value={app.nationality} onChange={(val) => updateApplicant(app.id, 'nationality', val)} />
+                              <SearchableSelect options={NATIONALITY_LIST} value={app.nationality} onChange={(val) => updateApplicant(app.id, 'nationality', val)} />
                             </div>
                           </div>
                           <div><label className="block text-xs text-gray-600 mb-1 font-semibold">Passport Number *</label><input type="text" className={`w-full border rounded p-2 text-sm ${app.isAutoFilled && app.ocrData?.passportNumber === app.passportNumber ? 'bg-green-50 border-green-200' : 'border-gray-300'}`} value={app.passportNumber} onChange={e => updateApplicant(app.id, 'passportNumber', e.target.value)} /></div>

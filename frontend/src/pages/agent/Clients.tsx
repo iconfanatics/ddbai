@@ -44,12 +44,19 @@ export default function Clients() {
   const [dateTo, setDateTo] = useState("");
 
   // Derived options based on selections
-  const fromCountries = useMemo(() => VISA_ROUTE_MASTER.map(c => c.name), []);
+  const fromCountries = useMemo(() => {
+    const unique = new Set(clients.map(c => c.fromCountry).filter(Boolean));
+    return Array.from(unique) as string[];
+  }, [clients]);
   
   const toCountries = useMemo(() => {
-    if (!selectedFromCountry) return [];
-    return VISA_ROUTE_MASTER.find(c => c.name === selectedFromCountry)?.toCountries.map(t => t.name) || [];
-  }, [selectedFromCountry]);
+    let filtered = clients;
+    if (selectedFromCountry) {
+      filtered = clients.filter(c => c.fromCountry === selectedFromCountry);
+    }
+    const unique = new Set(filtered.map(c => c.targetCountry).filter(Boolean));
+    return Array.from(unique) as string[];
+  }, [clients, selectedFromCountry]);
 
   const visaCenters = useMemo(() => {
     if (!selectedFromCountry || !selectedToCountry) return [];
