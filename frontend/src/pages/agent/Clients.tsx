@@ -99,7 +99,6 @@ export default function Clients() {
   };
 
   const fetchClients = async () => {
-    setLoading(true);
     try {
       const token = localStorage.getItem('token');
       const res = await fetch('/api/applications', { headers: { Authorization: `Bearer ${token}` } });
