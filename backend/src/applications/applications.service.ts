@@ -283,6 +283,35 @@ export class ApplicationsService {
     });
   }
 
+  
+  async getVerificationDetails(token: string) {
+    const session = await this.prisma.verificationSession.findUnique({
+      where: { id: token },
+      include: {
+        application: {
+          include: { customer: { include: { user: true } } }
+        }
+      }
+    });
+
+    if (!session) {
+      throw new ConflictException('Invalid or expired token');
+    }
+
+    // Identify primary applicant
+    // Actually, name/passport is stored in `CustomerProfile` user OR applicant
+    // If it's the customer profile:
+    const firstName = session.application.customer.user.firstName;
+    const lastName = session.application.customer.user.lastName;
+    const passportNumber = session.application.customer.passportNumber || "NOT_PROVIDED";
+
+    return {
+      status: session.status,
+      clientName: `${firstName} ${lastName}`,
+      passportNumber: passportNumber
+    };
+  }
+
   async handleFaceVerificationWebhook(body: { token: string, status: string, matchScore?: number, notes?: string }) {
     const session = await this.prisma.verificationSession.findFirst({
       where: { id: body.token }

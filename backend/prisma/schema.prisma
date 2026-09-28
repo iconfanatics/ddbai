@@ -171,6 +171,7 @@ model VerificationSession {
   providerName    String   @default("MOCK_PROVIDER")
   verificationUrl String?
   score           Float?
+  mediaData       Json?
   hasConsent      Boolean  @default(false)
   notes           String?
   expiresAt       DateTime

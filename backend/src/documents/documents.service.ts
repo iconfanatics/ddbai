@@ -52,6 +52,21 @@ export class DocumentsService implements OnModuleInit {
     return { uploadUrl, documentId: doc.id, key };
   }
 
+  
+  async generateVerificationMediaUploadUrl(token: string, filename: string) {
+    const session = await this.prisma.verificationSession.findFirst({ where: { id: token } });
+    if (!session) throw new Error('Invalid token');
+
+    const key = `verification/${session.id}/${Date.now()}-${filename}`;
+    const command = new PutObjectCommand({
+      Bucket: this.bucketName,
+      Key: key,
+    });
+    
+    const uploadUrl = await getSignedUrl(this.s3Client, command, { expiresIn: 3600 });
+    return { uploadUrl, key };
+  }
+
   async getDownloadUrl(documentId: string) {
     const doc = await this.prisma.document.findUnique({ where: { id: documentId } });
     if (!doc) throw new Error('Document not found');
