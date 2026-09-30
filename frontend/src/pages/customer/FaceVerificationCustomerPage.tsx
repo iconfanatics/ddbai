@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
 import * as faceapi from 'face-api.js';
 import { TRANSLATIONS, detectHeadPose, checkGesture, analyzeSelfieConditions } from './verificationUtils';
@@ -24,6 +24,7 @@ export default function FaceVerificationCustomerPage() {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const streamRef = useRef<MediaStream | null>(null);
+  const statusRef = useRef<VerificationState>('loading');
   
   const [lang, setLang] = useState<Language>('en');
   const t = TRANSLATIONS[lang];
@@ -41,13 +42,19 @@ export default function FaceVerificationCustomerPage() {
   }>({});
 
   const [isFaceGood, setIsFaceGood] = useState(false);
-  const [holdProgress, setHoldProgress] = useState(0); // 0 to 100
-  const [isRecording, setIsRecording] = useState(false);
   const [guidanceMsg, setGuidanceMsg] = useState('');
+  const [isRecording, setIsRecording] = useState(false);
+  const [countdown, setCountdown] = useState(0);
   
   const [currentGestureIndex, setCurrentGestureIndex] = useState(0);
   const [selfiePreviewUrl, setSelfiePreviewUrl] = useState('');
   const [gestureProgress, setGestureProgress] = useState(0);
+
+  // Keep statusRef in sync
+  const setStatusSafe = useCallback((s: VerificationState) => {
+    statusRef.current = s;
+    setStatus(s);
+  }, []);
 
   // Load Models on Mount
   useEffect(() => {
@@ -57,18 +64,18 @@ export default function FaceVerificationCustomerPage() {
         if (!res.ok) throw new Error('Invalid or expired verification link.');
         const data = await res.json();
         if (data.status === 'COMPLETED' || data.status === 'PASSED') {
-          setStatus('completed');
+          setStatusSafe('completed');
           return;
         }
         setClientDetails(data);
-        setStatus('identity');
+        setStatusSafe('identity');
         
         await Promise.all([
           faceapi.nets.tinyFaceDetector.loadFromUri('/models'),
           faceapi.nets.faceLandmark68Net.loadFromUri('/models')
         ]);
       } catch (err: any) {
-        setStatus('error');
+        setStatusSafe('error');
         setErrorMessage(err.message);
       }
     };
@@ -78,11 +85,15 @@ export default function FaceVerificationCustomerPage() {
   const startCamera = async () => {
     try {
       if (!streamRef.current) {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 720 } }, audio: false });
+        const stream = await navigator.mediaDevices.getUserMedia({ 
+          video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 720 } }, 
+          audio: false 
+        });
         streamRef.current = stream;
       }
       if (videoRef.current) {
         videoRef.current.srcObject = streamRef.current;
+        videoRef.current.play().catch(() => {});
       }
     } catch (err) {
       alert("Camera permission is required!");
@@ -96,149 +107,125 @@ export default function FaceVerificationCustomerPage() {
     }
   };
 
-  // Detection Loop for Selfie and Video
+  // Re-attach video stream whenever we navigate back to a camera screen
   useEffect(() => {
-    let active = true;
-    const loop = async () => {
-      if (!active) return;
-      if (videoRef.current && videoRef.current.readyState === 4 && !isRecording && (status === 'selfie' || status.includes('video'))) {
-        const detection = await faceapi.detectSingleFace(videoRef.current, new faceapi.TinyFaceDetectorOptions({ inputSize: 224 }));
-        const analysis = analyzeSelfieConditions(videoRef.current, detection);
-        setIsFaceGood(analysis.isGood);
-        setGuidanceMsg(analysis.message);
-        
-        setHoldProgress(prev => {
-          if (analysis.isGood) return Math.min(prev + 10, 100);
-          return Math.max(prev - 20, 0);
-        });
+    if (['selfie', 'face_video_1', 'face_video_2', 'gesture'].includes(status)) {
+      if (videoRef.current && streamRef.current) {
+        videoRef.current.srcObject = streamRef.current;
+        videoRef.current.play().catch(() => {});
       }
-      setTimeout(loop, 100);
-    };
-    if (status === 'selfie' || status.includes('video')) {
-      setHoldProgress(0);
-      loop();
-    }
-    return () => { active = false; };
-  }, [status, isRecording]);
-
-
-  // Auto-Capture logic when holdProgress hits 100%
-  useEffect(() => {
-    if (holdProgress >= 100 && !isRecording) {
-      if (status === 'selfie') {
-        captureSelfie();
-      } else if (status === 'face_video_1') {
-        recordVideo('face_video_1', 'face_video_2');
-      } else if (status === 'face_video_2') {
-        recordVideo('face_video_2', 'gesture');
-      }
-    }
-  }, [holdProgress, status, isRecording]);
-
-
-  // Re-attach video stream if the video element remounts
-  useEffect(() => {
-    if (videoRef.current && streamRef.current && videoRef.current.srcObject !== streamRef.current) {
-      videoRef.current.srcObject = streamRef.current;
-      videoRef.current.play().catch(e => console.log("Play prevented:", e));
     }
   }, [status]);
 
-  // Detection Loop for Gestures
+  // Face Detection Loop
   useEffect(() => {
     let active = true;
     const loop = async () => {
       if (!active) return;
-      if (status === 'gesture' && videoRef.current && videoRef.current.readyState === 4) {
-        const detection = await faceapi.detectSingleFace(videoRef.current, new faceapi.TinyFaceDetectorOptions({ inputSize: 224 })).withFaceLandmarks();
-        if (detection) {
-          const pose = detectHeadPose(detection.landmarks);
-          const expectedGesture = GESTURES[currentGestureIndex];
-          const isCorrect = checkGesture(expectedGesture, pose);
-          
-          setGestureProgress(prev => {
-            const next = isCorrect ? Math.min(prev + 10, 100) : 0; // Rollback instantly if wrong as per PDF
-            if (next === 100 && prev < 100) {
-              handleGestureComplete();
+      
+      const currentStatus = statusRef.current;
+      
+      if (videoRef.current && videoRef.current.readyState >= 2) {
+        if ((currentStatus === 'selfie' || currentStatus === 'face_video_1' || currentStatus === 'face_video_2') && !isRecording) {
+          try {
+            const detection = await faceapi.detectSingleFace(videoRef.current, new faceapi.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: 0.5 }));
+            const analysis = analyzeSelfieConditions(videoRef.current, detection);
+            setIsFaceGood(analysis.isGood);
+            setGuidanceMsg(analysis.message);
+          } catch (e) {
+            setIsFaceGood(false);
+            setGuidanceMsg('Detecting face...');
+          }
+        }
+        
+        if (currentStatus === 'gesture' && !isRecording) {
+          try {
+            const detection = await faceapi.detectSingleFace(videoRef.current, new faceapi.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: 0.5 })).withFaceLandmarks();
+            if (detection) {
+              const pose = detectHeadPose(detection.landmarks);
+              const expectedGesture = GESTURES[currentGestureIndex];
+              const isCorrect = checkGesture(expectedGesture, pose);
+              setGestureProgress(prev => {
+                const next = isCorrect ? Math.min(prev + 8, 100) : Math.max(prev - 15, 0);
+                return next;
+              });
+            } else {
+              setGestureProgress(prev => Math.max(prev - 15, 0));
             }
-            return next;
-          });
-        } else {
-          setGestureProgress(0);
+          } catch (e) {
+            // ignore
+          }
         }
       }
-      setTimeout(loop, 100);
+      
+      setTimeout(loop, 150);
     };
-    if (status === 'gesture' && !isRecording) {
-      setGestureProgress(0);
+    
+    if (['selfie', 'face_video_1', 'face_video_2', 'gesture'].includes(status)) {
       loop();
     }
+    
     return () => { active = false; };
-  }, [status, currentGestureIndex, isRecording]);
+  }, [status, isRecording, currentGestureIndex]);
 
-  const handleGestureComplete = () => {
-    // According to PDF, it automatically moves to next step when 100% reached
-    // Wait, the PDF says: "Video 2-o approved hole gesture verification shuru hobe."
-    // And "Saved Video: shudhu clean camera recording". We need to RECORD the gesture while holding?
-    // Wait, if we record while holding, we should start recording WHEN they start the gesture, and stop when it hits 100%.
-    // But since it's client-side, we just take the last 100% as verified. To simplify, we capture a blob snapshot for the gesture.
-    // Actually, capturing a snapshot is much faster and cleaner than 9 video chunks.
+  // Gesture completion check
+  useEffect(() => {
+    if (gestureProgress >= 100 && status === 'gesture') {
+      handleGestureComplete();
+    }
+  }, [gestureProgress]);
+
+  const handleGestureComplete = useCallback(() => {
     if (!videoRef.current) return;
+    setGestureProgress(0);
     const canvas = document.createElement('canvas');
-    canvas.width = videoRef.current.videoWidth;
-    canvas.height = videoRef.current.videoHeight;
+    canvas.width = videoRef.current.videoWidth || 640;
+    canvas.height = videoRef.current.videoHeight || 480;
     canvas.getContext('2d')?.drawImage(videoRef.current, 0, 0);
     canvas.toBlob(blob => {
       if (blob) {
         setMediaFiles(prev => ({ ...prev, [`gesture_0${currentGestureIndex + 1}`]: blob }));
-        if (currentGestureIndex < GESTURES.length - 1) {
-          setCurrentGestureIndex(prev => prev + 1);
-        } else {
-          setStatus('summary');
-        }
+        setCurrentGestureIndex(prev => {
+          const next = prev + 1;
+          if (next >= GESTURES.length) {
+            setTimeout(() => setStatusSafe('summary'), 300);
+          }
+          return next >= GESTURES.length ? prev : next;
+        });
       }
-    }, 'image/jpeg');
-  };
+    }, 'image/jpeg', 0.9);
+  }, [currentGestureIndex]);
 
-  const captureSelfie = () => {
-    if (!videoRef.current) return;
+  const captureSelfie = useCallback(() => {
+    if (!videoRef.current || videoRef.current.readyState < 2) return;
     const canvas = document.createElement('canvas');
-    canvas.width = videoRef.current.videoWidth;
-    canvas.height = videoRef.current.videoHeight;
+    canvas.width = videoRef.current.videoWidth || 640;
+    canvas.height = videoRef.current.videoHeight || 480;
     const ctx = canvas.getContext('2d');
     if (ctx) {
-      // Draw mirrored if the video is mirrored via CSS
       ctx.translate(canvas.width, 0);
       ctx.scale(-1, 1);
       ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
     }
     const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
     setSelfiePreviewUrl(dataUrl);
-    
     canvas.toBlob(blob => {
-      if (blob) {
-        setMediaFiles(prev => ({ ...prev, selfie: blob }));
-      }
+      if (blob) setMediaFiles(prev => ({ ...prev, selfie: blob }));
     }, 'image/jpeg', 0.9);
-    
-    setStatus('selfie_review');
-  };
+    setStatusSafe('selfie_review');
+  }, []);
 
-  const recordVideo = (key: string, nextStatus: VerificationState) => {
-    if (!streamRef.current) return;
+  const recordVideo = useCallback((key: string, nextStatus: VerificationState) => {
+    if (!streamRef.current || isRecording) return;
     chunksRef.current = [];
     
+    const mimeTypes = ['video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm', 'video/mp4', ''];
+    const supportedMime = mimeTypes.find(mime => {
+      try { return mime === '' || MediaRecorder.isTypeSupported(mime); } catch { return false; }
+    }) ?? '';
+    
     try {
-      // Find supported mimeType for iOS Safari compatibility
-      let options: any = {};
-      if (MediaRecorder.isTypeSupported('video/webm;codecs=vp9')) {
-        options = { mimeType: 'video/webm;codecs=vp9' };
-      } else if (MediaRecorder.isTypeSupported('video/webm')) {
-        options = { mimeType: 'video/webm' };
-      } else if (MediaRecorder.isTypeSupported('video/mp4')) {
-        options = { mimeType: 'video/mp4' };
-      }
-      
+      const options = supportedMime ? { mimeType: supportedMime } : {};
       const mr = new MediaRecorder(streamRef.current, options);
       mediaRecorderRef.current = mr;
       
@@ -247,68 +234,71 @@ export default function FaceVerificationCustomerPage() {
       };
       
       mr.onstop = () => {
-        if (chunksRef.current.length > 0) {
-          const type = options.mimeType || 'video/webm';
-          const blob = new Blob(chunksRef.current, { type });
-          setMediaFiles(prev => ({ ...prev, [key]: blob }));
-        }
+        const blob = new Blob(chunksRef.current, { type: supportedMime || 'video/webm' });
+        setMediaFiles(prev => ({ ...prev, [key]: blob }));
+        setIsRecording(false);
+        setCountdown(0);
+        setStatusSafe(nextStatus);
       };
 
-      // Start without timeslice to prevent Safari silently failing
-      mr.start();
+      mr.start(500);
       setIsRecording(true);
       
+      // Countdown timer
+      let secs = 5;
+      setCountdown(secs);
+      const interval = setInterval(() => {
+        secs--;
+        setCountdown(secs);
+        if (secs <= 0) clearInterval(interval);
+      }, 1000);
+      
       setTimeout(() => {
+        clearInterval(interval);
         try {
-          if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
-            mediaRecorderRef.current.requestData(); // Force push last chunk
-            mediaRecorderRef.current.stop();
+          if (mr.state !== 'inactive') {
+            mr.requestData();
+            mr.stop();
+          } else {
+            // MediaRecorder never started properly - use snapshot fallback
+            setIsRecording(false);
+            setCountdown(0);
+            captureSnapshotFallback(key, nextStatus);
           }
         } catch (err) {
-          console.error("Error stopping MediaRecorder:", err);
+          setIsRecording(false);
+          setCountdown(0);
+          captureSnapshotFallback(key, nextStatus);
         }
-        
-        // Wait a tiny bit for onstop to fire and populate chunks
-        setTimeout(() => {
-          if (chunksRef.current.length === 0) {
-            // Fallback to snapshot if MediaRecorder failed silently
-            captureSnapshotFallback(key, nextStatus);
-          } else {
-            setStatus(nextStatus);
-            setIsRecording(false);
-          }
-        }, 500);
       }, 5000);
+      
     } catch (e) {
-      console.error("MediaRecorder failed:", e);
-      // Fallback: If MediaRecorder is entirely broken on this device, just capture a snapshot so it doesn't freeze
       captureSnapshotFallback(key, nextStatus);
     }
-  };
+  }, [isRecording]);
 
   const captureSnapshotFallback = (key: string, nextStatus: VerificationState) => {
-    if (!videoRef.current) return;
+    if (!videoRef.current) { setStatusSafe(nextStatus); return; }
     const canvas = document.createElement('canvas');
-    canvas.width = videoRef.current.videoWidth;
-    canvas.height = videoRef.current.videoHeight;
-    canvas.getContext('2d')?.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
+    canvas.width = videoRef.current.videoWidth || 640;
+    canvas.height = videoRef.current.videoHeight || 480;
+    canvas.getContext('2d')?.drawImage(videoRef.current, 0, 0);
     canvas.toBlob(blob => {
-      if (blob) {
-        setMediaFiles(prev => ({ ...prev, [key]: blob }));
-        setStatus(nextStatus);
-        setIsRecording(false);
-      }
+      if (blob) setMediaFiles(prev => ({ ...prev, [key]: blob }));
+      setIsRecording(false);
+      setCountdown(0);
+      setStatusSafe(nextStatus);
     }, 'image/jpeg', 0.9);
   };
 
   const submitAll = async () => {
-    setStatus('submitting');
     stopCamera();
     try {
       const mediaData: any = {};
       for (const [key, file] of Object.entries(mediaFiles)) {
         if (!file) continue;
-        const ext = file.type.includes('video') ? 'webm' : 'jpg';
+        const isVideo = file.type.includes('video') || file.type.includes('webm') || file.type.includes('mp4');
+        const ext = isVideo ? 'webm' : 'jpg';
         const filename = `${key}.${ext}`;
         
         const resUrl = await fetch('/api/public/webhook/face-verification/upload-url', {
@@ -317,10 +307,9 @@ export default function FaceVerificationCustomerPage() {
         });
         if (!resUrl.ok) throw new Error("Failed to get upload URL");
         const { uploadUrl, key: s3Key } = await resUrl.json();
-        let finalUrl = uploadUrl.replace('http://minio:9000', window.location.origin + '/minio-api');
+        const finalUrl = uploadUrl.replace('http://minio:9000', window.location.origin + '/minio-api');
         
-        const putRes = await fetch(finalUrl, { method: 'PUT', body: file, headers: { 'Content-Type': file.type } });
-        if (!putRes.ok) throw new Error("Upload failed for " + filename);
+        await fetch(finalUrl, { method: 'PUT', body: file, headers: { 'Content-Type': file.type || 'video/webm' } });
         mediaData[key] = s3Key;
       }
 
@@ -329,17 +318,12 @@ export default function FaceVerificationCustomerPage() {
         body: JSON.stringify({ token, status: 'COMPLETED', mediaData })
       });
       if (!resFin.ok) throw new Error("Failed to finalize submission");
-      setStatus('completed');
+      setStatusSafe('completed');
     } catch (err: any) {
-      setStatus('error');
+      setStatusSafe('error');
       setErrorMessage(err.message);
     }
   };
-
-  useEffect(() => {
-    if (status === 'submitting') submitAll();
-  }, [status]);
-
 
   if (status === 'error') {
     return (
@@ -382,7 +366,7 @@ export default function FaceVerificationCustomerPage() {
               <div className="w-full bg-gray-50 border border-gray-200 rounded-xl p-3.5 text-sm font-semibold text-gray-800">{clientDetails?.passportNumber}</div>
             </div>
 
-            <button onClick={() => setStatus('passport_upload')} className="w-full bg-[#0052FF] hover:bg-blue-700 text-white font-bold py-4 rounded-2xl transition-all shadow-lg text-lg">
+            <button onClick={() => setStatusSafe('passport_upload')} className="w-full bg-[#0052FF] hover:bg-blue-700 text-white font-bold py-4 rounded-2xl transition-all shadow-lg text-lg">
               {t.startVerification}
             </button>
           </div>
@@ -399,14 +383,11 @@ export default function FaceVerificationCustomerPage() {
           <p className="text-sm text-gray-500 mb-6">{t.uploadInstruction}</p>
           
           <div className="border-2 border-dashed border-blue-200 rounded-2xl p-8 flex flex-col items-center justify-center bg-blue-50/50 cursor-pointer hover:bg-blue-50 transition-colors relative mb-6">
-            <input 
-              type="file" accept="image/*" className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-              onChange={(e) => e.target.files?.[0] && setMediaFiles(prev => ({ ...prev, passport: e.target.files![0] }))}
-            />
+            <input type="file" accept="image/*" className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" onChange={(e) => e.target.files?.[0] && setMediaFiles(prev => ({ ...prev, passport: e.target.files![0] }))} />
             {mediaFiles.passport ? (
               <div className="text-center">
                 <svg className="w-12 h-12 text-green-500 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-                <p className="text-sm font-bold text-gray-800">Passport Selected</p>
+                <p className="text-sm font-bold text-gray-800">Passport Selected ✓</p>
               </div>
             ) : (
               <div className="text-center">
@@ -423,18 +404,13 @@ export default function FaceVerificationCustomerPage() {
               <h3 className="text-sm font-bold text-[#0E1B31]">{t.importantInstructions}</h3>
             </div>
             <ul className="space-y-2 text-xs text-gray-600">
-              <li className="flex items-start"><svg className="w-4 h-4 text-green-500 mr-2 rtl:ml-2 rtl:mr-0 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"/></svg>{t.inst1}</li>
-              <li className="flex items-start"><svg className="w-4 h-4 text-green-500 mr-2 rtl:ml-2 rtl:mr-0 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"/></svg>{t.inst2}</li>
-              <li className="flex items-start"><svg className="w-4 h-4 text-green-500 mr-2 rtl:ml-2 rtl:mr-0 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"/></svg>{t.inst3}</li>
-              <li className="flex items-start"><svg className="w-4 h-4 text-green-500 mr-2 rtl:ml-2 rtl:mr-0 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"/></svg>{t.inst4}</li>
+              {[t.inst1, t.inst2, t.inst3, t.inst4].map((inst, i) => (
+                <li key={i} className="flex items-start"><svg className="w-4 h-4 text-green-500 mr-2 rtl:ml-2 rtl:mr-0 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"/></svg>{inst}</li>
+              ))}
             </ul>
           </div>
           
-          <button 
-            onClick={() => { startCamera(); setStatus('selfie'); }}
-            disabled={!mediaFiles.passport}
-            className={`w-full font-bold py-4 rounded-2xl transition-all text-lg ${!mediaFiles.passport ? 'bg-gray-200 text-gray-400' : 'bg-[#0052FF] text-white shadow-lg hover:bg-blue-700'}`}
-          >
+          <button onClick={() => { startCamera(); setStatusSafe('selfie'); }} disabled={!mediaFiles.passport} className={`w-full font-bold py-4 rounded-2xl transition-all text-lg ${!mediaFiles.passport ? 'bg-gray-200 text-gray-400' : 'bg-[#0052FF] text-white shadow-lg hover:bg-blue-700'}`}>
             {t.nextStep}
           </button>
         </div>
@@ -442,38 +418,34 @@ export default function FaceVerificationCustomerPage() {
     );
   }
 
-
-
   if (status === 'summary') {
     return (
       <div className="min-h-screen bg-gray-50 flex flex-col items-center p-4 font-sans" dir={lang === 'ar' ? 'rtl' : 'ltr'}>
         <div className="w-full max-w-md bg-white rounded-3xl shadow-sm border border-gray-100 p-6 mt-4">
           <h2 className="text-xl font-bold text-[#0E1B31] mb-6">{t.verificationSummary}</h2>
-          
-          <div className="space-y-4 mb-8">
-            <div className="flex justify-between items-center pb-2 border-b border-gray-100">
-              <span className="text-gray-600">Passport</span>
-              <span className="text-green-500 font-bold flex items-center"><svg className="w-4 h-4 mr-1 rtl:ml-1 rtl:mr-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"/></svg> Approved</span>
-            </div>
-            <div className="flex justify-between items-center pb-2 border-b border-gray-100">
-              <span className="text-gray-600">Selfie</span>
-              <span className="text-green-500 font-bold flex items-center"><svg className="w-4 h-4 mr-1 rtl:ml-1 rtl:mr-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"/></svg> Approved</span>
-            </div>
-            <div className="flex justify-between items-center pb-2 border-b border-gray-100">
-              <span className="text-gray-600">Video 1 & 2</span>
-              <span className="text-green-500 font-bold flex items-center"><svg className="w-4 h-4 mr-1 rtl:ml-1 rtl:mr-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"/></svg> Approved</span>
-            </div>
-            {GESTURES.map(g => (
-              <div key={g} className="flex justify-between items-center pb-2 border-b border-gray-100">
-                <span className="text-gray-600">{g}</span>
-                <span className="text-green-500 font-bold flex items-center"><svg className="w-4 h-4 mr-1 rtl:ml-1 rtl:mr-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"/></svg> Approved</span>
+          <div className="space-y-3 mb-8">
+            {['Passport', 'Selfie', 'Video 1', 'Video 2', ...GESTURES].map(item => (
+              <div key={item} className="flex justify-between items-center py-2 border-b border-gray-100">
+                <span className="text-gray-600 text-sm">{item}</span>
+                <span className="text-green-500 font-bold text-sm flex items-center"><svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"/></svg> Approved</span>
               </div>
             ))}
           </div>
-          
-          <button onClick={() => setStatus('submitting')} className="w-full bg-[#0052FF] hover:bg-blue-700 text-white font-bold py-4 rounded-2xl transition-all shadow-lg text-lg">
+          <button onClick={() => { setStatusSafe('submitting'); submitAll(); }} className="w-full bg-[#0052FF] hover:bg-blue-700 text-white font-bold py-4 rounded-2xl transition-all shadow-lg text-lg">
             Complete Verification
           </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (status === 'submitting') {
+    return (
+      <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-4">
+        <div className="bg-white p-8 rounded-3xl shadow text-center max-w-sm w-full">
+          <div className="text-blue-600 animate-spin w-12 h-12 border-4 border-current border-t-transparent rounded-full mx-auto mb-4"></div>
+          <h2 className="text-lg font-bold text-gray-800 mb-2">Uploading...</h2>
+          <p className="text-sm text-gray-500">Please wait while we securely upload your verification data.</p>
         </div>
       </div>
     );
@@ -493,94 +465,119 @@ export default function FaceVerificationCustomerPage() {
     );
   }
 
-  // Camera based steps (Selfie, Video, Gesture)
+  // Camera Steps
+  const isVideoStep = status === 'face_video_1' || status === 'face_video_2';
+  const canCapture = isFaceGood && !isRecording;
+
   return (
     <div className="min-h-screen bg-white flex flex-col font-sans relative" dir={lang === 'ar' ? 'rtl' : 'ltr'}>
-      {/* Selfie Review Overlay */}
+      
+      {/* Selfie Review Overlay - keeps camera mounted in background */}
       {status === 'selfie_review' && (
         <div className="absolute inset-0 z-50 bg-black flex flex-col font-sans">
           <div className="flex-1 bg-gray-900 flex items-center justify-center p-4">
-            <img src={selfiePreviewUrl} alt="Selfie" className="w-full max-w-sm rounded-3xl object-cover shadow-2xl" />
+            {selfiePreviewUrl ? (
+              <img src={selfiePreviewUrl} alt="Selfie" className="w-full max-w-sm rounded-3xl object-cover shadow-2xl" />
+            ) : (
+              <div className="text-white">Loading preview...</div>
+            )}
           </div>
           <div className="bg-white p-6 pb-10 flex space-x-4 rtl:space-x-reverse rounded-t-3xl">
-            <button onClick={() => { setHoldProgress(0); setStatus('selfie'); }} className="flex-1 bg-gray-100 text-gray-800 font-bold py-4 rounded-2xl">{t.retry}</button>
-            <button onClick={() => { setHoldProgress(0); setStatus('face_video_1'); }} className="flex-1 bg-[#0052FF] text-white font-bold py-4 rounded-2xl">Verify & Continue</button>
+            <button onClick={() => { setIsFaceGood(false); setGuidanceMsg(''); setStatusSafe('selfie'); }} className="flex-1 bg-gray-100 text-gray-800 font-bold py-4 rounded-2xl">{t.retry}</button>
+            <button onClick={() => { setIsFaceGood(false); setGuidanceMsg(''); setStatusSafe('face_video_1'); }} className="flex-1 bg-[#0052FF] text-white font-bold py-4 rounded-2xl">Verify & Continue →</button>
           </div>
         </div>
       )}
 
-      {/* Header Info */}
-      <div className="text-center p-6 bg-white z-10">
-        <img src="/logo.png" alt="Visaora" className="h-10 mx-auto mb-4" onError={(e)=>e.currentTarget.style.display='none'}/>
+      {/* Header */}
+      <div className="text-center px-6 pt-6 pb-3 bg-white z-10">
+        <img src="/logo.png" alt="Visaora" className="h-10 mx-auto mb-3" onError={(e)=>e.currentTarget.style.display='none'}/>
         <h2 className="text-[#0E1B31] font-extrabold text-xl">
           {status === 'selfie' && t.lookAtCamera}
-          {status === 'face_video_1' && t.video1}
-          {status === 'face_video_2' && t.video2}
+          {status === 'face_video_1' && `${t.video1} — Look at camera`}
+          {status === 'face_video_2' && `${t.video2} — Look at camera`}
           {status === 'gesture' && GESTURES[currentGestureIndex]}
         </h2>
+        {status === 'gesture' && (
+          <p className="text-xs text-gray-500 mt-1">{currentGestureIndex + 1} of {GESTURES.length}</p>
+        )}
       </div>
 
       {/* Video Viewfinder */}
-      <div className="flex-1 relative flex items-center justify-center bg-gray-100 overflow-hidden rounded-t-[40px] shadow-inner">
+      <div className="flex-1 relative flex items-center justify-center bg-gray-100 overflow-hidden">
         <video ref={videoRef} autoPlay playsInline muted className="absolute inset-0 w-full h-full object-cover transform scale-x-[-1]" />
         
-        {/* Face Guide Overlay (Only UI, not recorded in blob) */}
+        {/* Face Guide */}
         <div className="absolute inset-0 pointer-events-none flex flex-col items-center justify-center px-6">
-          <div className={`w-full max-w-[280px] aspect-[3/4] border-4 rounded-[120px] transition-all duration-300 ${status === 'gesture' ? (gestureProgress > 0 ? 'border-green-500' : 'border-dashed border-white/70') : (isFaceGood ? 'border-blue-500' : 'border-dashed border-white/70')}`}></div>
+          <div className={`w-[220px] h-[290px] border-4 rounded-[110px] transition-all duration-300 ${
+            status === 'gesture' 
+              ? (gestureProgress > 0 ? 'border-green-400 shadow-lg shadow-green-400/30' : 'border-white/50 border-dashed')
+              : (isFaceGood ? 'border-blue-400 shadow-lg shadow-blue-400/30' : 'border-white/50 border-dashed')
+          }`}></div>
         </div>
 
-        {/* Progress UI */}
-        <div className="absolute bottom-8 left-6 right-6">
-          <div className="bg-white/95 backdrop-blur rounded-2xl p-4 shadow-lg flex flex-col items-center">
-            <div className="flex items-center text-[#0E1B31] font-bold text-sm mb-2 text-center">
-              <svg className={`w-5 h-5 mr-2 ${isFaceGood || status === 'gesture' ? 'text-blue-500' : 'text-red-500'}`} fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd"/></svg>
-              {status === 'gesture' ? "Hold the position..." : guidanceMsg || t.holdStill}
-            </div>
-            
-            <div className="w-full bg-gray-200 rounded-full h-2.5 mb-1 overflow-hidden">
-              <div className="bg-blue-600 h-2.5 rounded-full transition-all duration-300 ease-out" style={{ width: `${status === 'gesture' ? gestureProgress : holdProgress}%` }}></div>
-            </div>
-            <div className="text-blue-600 font-bold text-xs self-end">{status === 'gesture' ? gestureProgress : holdProgress}%</div>
-          </div>
-        </div>
-
+        {/* Recording indicator */}
         {isRecording && (
-          <div className="absolute top-6 right-6 bg-red-500 text-white px-4 py-1.5 rounded-full text-xs font-bold flex items-center shadow animate-pulse">
-            <div className="w-2 h-2 bg-white rounded-full mr-2 rtl:ml-2 rtl:mr-0"></div> Recording
+          <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-red-500 text-white px-5 py-2 rounded-full text-sm font-bold flex items-center shadow-lg animate-pulse">
+            <div className="w-2.5 h-2.5 bg-white rounded-full mr-2"></div>
+            REC {countdown > 0 ? `${countdown}s` : ''}
           </div>
         )}
+
+        {/* Guidance message */}
+        <div className="absolute bottom-4 left-4 right-4">
+          <div className="bg-black/60 backdrop-blur-sm rounded-2xl px-4 py-3 text-center">
+            <p className={`text-sm font-bold ${
+              status === 'gesture' 
+                ? (gestureProgress > 0 ? 'text-green-400' : 'text-white')
+                : (isFaceGood ? 'text-green-400' : 'text-yellow-400')
+            }`}>
+              {status === 'gesture' 
+                ? (gestureProgress > 0 ? `Hold it... ${gestureProgress}%` : `Do: ${GESTURES[currentGestureIndex]}`)
+                : (isRecording ? `Recording... ${countdown}s` : (guidanceMsg || 'Detecting face...'))}
+            </p>
+            
+            {/* Progress bar */}
+            {status === 'gesture' && (
+              <div className="w-full bg-white/20 rounded-full h-2 mt-2 overflow-hidden">
+                <div className="bg-green-400 h-2 rounded-full transition-all duration-200" style={{ width: `${gestureProgress}%` }}></div>
+              </div>
+            )}
+          </div>
+        </div>
       </div>
 
       {/* Action Button */}
-      <div className="bg-white p-6 pb-8 flex justify-center items-center">
+      <div className="bg-white px-6 pt-5 pb-8">
         {status === 'selfie' && (
           <button 
             onClick={captureSelfie}
-            disabled={holdProgress < 100}
-            className={`w-full py-4 rounded-2xl font-bold transition-all text-lg flex justify-center items-center ${holdProgress >= 100 ? 'bg-[#0052FF] text-white shadow-lg hover:bg-blue-700' : 'bg-gray-200 text-gray-400'}`}
+            disabled={!canCapture}
+            className={`w-full py-4 rounded-2xl font-bold text-lg flex justify-center items-center transition-all ${canCapture ? 'bg-[#0052FF] text-white shadow-lg active:scale-95' : 'bg-gray-100 text-gray-400'}`}
           >
-            <svg className="w-6 h-6 mr-2 rtl:ml-2 rtl:mr-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
-            {t.captureSelfie}
+            <svg className="w-6 h-6 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+            {canCapture ? t.captureSelfie : (isFaceGood === false ? 'Position face in frame' : 'Detecting...')}
           </button>
         )}
         
-        {status === 'face_video_1' && (
-          <button onClick={() => recordVideo('face_video_1', 'face_video_2')} disabled={holdProgress < 100 || isRecording} className={`w-full py-4 rounded-2xl font-bold transition-all text-lg flex justify-center items-center ${holdProgress >= 100 && !isRecording ? 'bg-[#0052FF] text-white shadow-lg' : 'bg-gray-200 text-gray-400'}`}>
-            <svg className="w-6 h-6 mr-2 rtl:ml-2 rtl:mr-0" fill="currentColor" viewBox="0 0 20 20"><path d="M2 6a2 2 0 012-2h6a2 2 0 012 2v8a2 2 0 01-2 2H4a2 2 0 01-2-2V6zM14.553 7.106A1 1 0 0014 8v4a1 1 0 00.553.894l2 1A1 1 0 0018 13V7a1 1 0 00-1.447-.894l-2 1z"/></svg>
-            {t.startVideo}
-          </button>
-        )}
-        
-        {status === 'face_video_2' && (
-          <button onClick={() => recordVideo('face_video_2', 'gesture')} disabled={holdProgress < 100 || isRecording} className={`w-full py-4 rounded-2xl font-bold transition-all text-lg flex justify-center items-center ${holdProgress >= 100 && !isRecording ? 'bg-[#0052FF] text-white shadow-lg' : 'bg-gray-200 text-gray-400'}`}>
-            <svg className="w-6 h-6 mr-2 rtl:ml-2 rtl:mr-0" fill="currentColor" viewBox="0 0 20 20"><path d="M2 6a2 2 0 012-2h6a2 2 0 012 2v8a2 2 0 01-2 2H4a2 2 0 01-2-2V6zM14.553 7.106A1 1 0 0014 8v4a1 1 0 00.553.894l2 1A1 1 0 0018 13V7a1 1 0 00-1.447-.894l-2 1z"/></svg>
-            {t.startVideo}
+        {isVideoStep && (
+          <button 
+            onClick={() => {
+              const key = status === 'face_video_1' ? 'face_video_1' : 'face_video_2';
+              const next = status === 'face_video_1' ? 'face_video_2' : 'gesture';
+              recordVideo(key, next as VerificationState);
+            }}
+            disabled={!canCapture || isRecording}
+            className={`w-full py-4 rounded-2xl font-bold text-lg flex justify-center items-center transition-all ${canCapture && !isRecording ? 'bg-[#0052FF] text-white shadow-lg active:scale-95' : 'bg-gray-100 text-gray-400'}`}
+          >
+            <svg className="w-6 h-6 mr-2" fill="currentColor" viewBox="0 0 20 20"><path d="M2 6a2 2 0 012-2h6a2 2 0 012 2v8a2 2 0 01-2 2H4a2 2 0 01-2-2V6zM14.553 7.106A1 1 0 0014 8v4a1 1 0 00.553.894l2 1A1 1 0 0018 13V7a1 1 0 00-1.447-.894l-2 1z"/></svg>
+            {isRecording ? `Recording... ${countdown}s` : (canCapture ? `Record ${status === 'face_video_1' ? 'Video 1' : 'Video 2'} (5s)` : 'Position face in frame')}
           </button>
         )}
 
         {status === 'gesture' && (
-          <div className="w-full text-center text-sm font-bold text-gray-500 uppercase tracking-widest py-3">
-            Analyzing Posture...
+          <div className="text-center py-3 text-gray-500 text-sm font-medium">
+            {currentGestureIndex + 1}/{GESTURES.length} · Move your face to match: <span className="font-bold text-[#0052FF]">{GESTURES[currentGestureIndex]}</span>
           </div>
         )}
       </div>
