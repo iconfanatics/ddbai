@@ -212,13 +212,16 @@ export default function FaceVerificationCustomerPage() {
       ctx.scale(-1, 1);
       ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
     }
+    const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
+    setSelfiePreviewUrl(dataUrl);
+    
     canvas.toBlob(blob => {
       if (blob) {
         setMediaFiles(prev => ({ ...prev, selfie: blob }));
-        setSelfiePreviewUrl(URL.createObjectURL(blob));
-        setStatus('selfie_review');
       }
     }, 'image/jpeg', 0.9);
+    
+    setStatus('selfie_review');
   };
 
   const recordVideo = (key: string, nextStatus: VerificationState) => {
@@ -383,19 +386,7 @@ export default function FaceVerificationCustomerPage() {
     );
   }
 
-  if (status === 'selfie_review') {
-    return (
-      <div className="min-h-screen bg-black flex flex-col font-sans">
-        <div className="flex-1 bg-gray-900 flex items-center justify-center p-4">
-          <img src={selfiePreviewUrl} alt="Selfie" className="w-full max-w-sm rounded-3xl object-cover" />
-        </div>
-        <div className="bg-white p-6 pb-10 flex space-x-4 rtl:space-x-reverse rounded-t-3xl">
-          <button onClick={() => setStatus('selfie')} className="flex-1 bg-gray-100 text-gray-800 font-bold py-4 rounded-2xl">{t.retry}</button>
-          <button onClick={() => { setHoldProgress(0); setStatus('face_video_1'); }} className="flex-1 bg-[#0052FF] text-white font-bold py-4 rounded-2xl">Verify & Continue</button>
-        </div>
-      </div>
-    );
-  }
+
 
   if (status === 'summary') {
     return (
@@ -448,7 +439,20 @@ export default function FaceVerificationCustomerPage() {
 
   // Camera based steps (Selfie, Video, Gesture)
   return (
-    <div className="min-h-screen bg-white flex flex-col font-sans" dir={lang === 'ar' ? 'rtl' : 'ltr'}>
+    <div className="min-h-screen bg-white flex flex-col font-sans relative" dir={lang === 'ar' ? 'rtl' : 'ltr'}>
+      {/* Selfie Review Overlay */}
+      {status === 'selfie_review' && (
+        <div className="absolute inset-0 z-50 bg-black flex flex-col font-sans">
+          <div className="flex-1 bg-gray-900 flex items-center justify-center p-4">
+            <img src={selfiePreviewUrl} alt="Selfie" className="w-full max-w-sm rounded-3xl object-cover shadow-2xl" />
+          </div>
+          <div className="bg-white p-6 pb-10 flex space-x-4 rtl:space-x-reverse rounded-t-3xl">
+            <button onClick={() => { setHoldProgress(0); setStatus('selfie'); }} className="flex-1 bg-gray-100 text-gray-800 font-bold py-4 rounded-2xl">{t.retry}</button>
+            <button onClick={() => { setHoldProgress(0); setStatus('face_video_1'); }} className="flex-1 bg-[#0052FF] text-white font-bold py-4 rounded-2xl">Verify & Continue</button>
+          </div>
+        </div>
+      )}
+
       {/* Header Info */}
       <div className="text-center p-6 bg-white z-10">
         <img src="/logo.png" alt="Visaora" className="h-10 mx-auto mb-4" onError={(e)=>e.currentTarget.style.display='none'}/>
