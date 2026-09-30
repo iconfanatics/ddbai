@@ -247,21 +247,37 @@ export default function FaceVerificationCustomerPage() {
       };
       
       mr.onstop = () => {
-        const type = options.mimeType || 'video/webm';
-        const blob = new Blob(chunksRef.current, { type });
-        setMediaFiles(prev => ({ ...prev, [key]: blob }));
-        setStatus(nextStatus);
+        if (chunksRef.current.length > 0) {
+          const type = options.mimeType || 'video/webm';
+          const blob = new Blob(chunksRef.current, { type });
+          setMediaFiles(prev => ({ ...prev, [key]: blob }));
+        }
       };
 
-      // Request data every 1 second to ensure chunks are pushed on iOS
-      mr.start(1000);
+      // Start without timeslice to prevent Safari silently failing
+      mr.start();
       setIsRecording(true);
       
       setTimeout(() => {
-        if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
-          mediaRecorderRef.current.stop();
+        try {
+          if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+            mediaRecorderRef.current.requestData(); // Force push last chunk
+            mediaRecorderRef.current.stop();
+          }
+        } catch (err) {
+          console.error("Error stopping MediaRecorder:", err);
         }
-        setIsRecording(false);
+        
+        // Wait a tiny bit for onstop to fire and populate chunks
+        setTimeout(() => {
+          if (chunksRef.current.length === 0) {
+            // Fallback to snapshot if MediaRecorder failed silently
+            captureSnapshotFallback(key, nextStatus);
+          } else {
+            setStatus(nextStatus);
+            setIsRecording(false);
+          }
+        }, 500);
       }, 5000);
     } catch (e) {
       console.error("MediaRecorder failed:", e);
