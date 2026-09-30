@@ -104,4 +104,16 @@ export class DocumentsService implements OnModuleInit {
     const downloadUrl = await getSignedUrl(this.s3Client, command, { expiresIn: 3600 });
     return { downloadUrl };
   }
+
+  async getVerificationMediaStream(key: string) {
+    const command = new GetObjectCommand({
+      Bucket: this.bucketName,
+      Key: key,
+    });
+    const response = await this.s3Client.send(command);
+    return {
+      stream: response.Body as NodeJS.ReadableStream,
+      contentType: response.ContentType
+    };
+  }
 }

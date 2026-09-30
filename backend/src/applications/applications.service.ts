@@ -1,3 +1,4 @@
+
 import { Injectable, NotFoundException, ConflictException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { DocumentsService } from '../documents/documents.service.js';
@@ -397,5 +398,9 @@ export class ApplicationsService {
 
   async getVerificationMediaDownloadUrl(key: string) {
     return this.documentsService.getVerificationMediaDownloadUrl(key);
+  }
+
+  async getVerificationMediaStream(key: string) {
+    return this.documentsService.getVerificationMediaStream(key);
   }
 }

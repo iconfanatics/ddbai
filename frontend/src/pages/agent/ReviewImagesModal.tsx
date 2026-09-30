@@ -17,37 +17,13 @@ const MEDIA_LABELS: Record<string, string> = {
 };
 
 function MediaItem({ mediaKey, s3Key }: { mediaKey: string, s3Key: string }) {
-  const [url, setUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const isVideo = mediaKey.includes('video');
   const label = MEDIA_LABELS[mediaKey] || mediaKey;
-
-  useEffect(() => {
-    const authToken = localStorage.getItem('token');
-    fetch('/api/applications/verification-media-url', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${authToken}` },
-      body: JSON.stringify({ key: s3Key }),
-    })
-      .then(r => r.json())
-      .then(d => { 
-        // Backend returns an internal Docker URL (e.g. http://minio:9000)
-        // We must rewrite it to route through our public Caddy proxy
-        let finalUrl = d.downloadUrl;
-        if (finalUrl) {
-          try {
-            const urlObj = new URL(finalUrl);
-            finalUrl = window.location.origin + '/minio-api' + urlObj.pathname + urlObj.search;
-          } catch (e) {
-            // fallback if not a valid URL
-          }
-        }
-        setUrl(finalUrl); 
-        setLoading(false); 
-      })
-      .catch(() => { setError(true); setLoading(false); });
-  }, [s3Key]);
+  
+  // Use direct stream endpoint
+  const url = `/api/applications/verification-media?key=${encodeURIComponent(s3Key)}`;
 
   return (
     <div className="flex flex-col rounded-xl overflow-hidden border border-gray-200 bg-gray-50 shadow-sm">
@@ -69,13 +45,16 @@ function MediaItem({ mediaKey, s3Key }: { mediaKey: string, s3Key: string }) {
               controls
               className="w-full h-full object-cover"
               playsInline
+              onLoadedData={() => setLoading(false)}
+              onError={() => { setError(true); setLoading(false); }}
             />
           ) : (
             <img
               src={url}
               alt={label}
               className="w-full h-full object-cover"
-              onError={() => setError(true)}
+              onLoad={() => setLoading(false)}
+              onError={() => { setError(true); setLoading(false); }}
             />
           )
         )}

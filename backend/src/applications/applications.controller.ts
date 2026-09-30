@@ -1,4 +1,5 @@
-import { Controller, Get, Post, Body, Param, Patch, Query, ConflictException, BadRequestException, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, Patch, Query, ConflictException, BadRequestException, UseGuards, Res } from '@nestjs/common';
+import type { Response } from 'express';
 import { ApplicationsService } from './applications.service.js';
 import { AuthGuard } from '@nestjs/passport';
 
@@ -42,6 +43,17 @@ export class ApplicationsController {
   @Post('verification-media-url')
   getVerificationMediaUrl(@Body() body: { key: string }) {
     return this.applicationsService.getVerificationMediaDownloadUrl(body.key);
+  }
+
+  @Get('verification-media')
+  async getVerificationMediaStream(@Query('key') key: string, @Res() res: Response) {
+    try {
+      const { stream, contentType } = await this.applicationsService.getVerificationMediaStream(key);
+      res.setHeader('Content-Type', contentType || 'application/octet-stream');
+      stream.pipe(res);
+    } catch (err) {
+      res.status(404).send('Not found');
+    }
   }
 
   @Post()
