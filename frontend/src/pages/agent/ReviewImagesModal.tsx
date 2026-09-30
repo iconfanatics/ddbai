@@ -16,7 +16,7 @@ const MEDIA_LABELS: Record<string, string> = {
   gesture_09: 'Look Up-Right',
 };
 
-function MediaItem({ mediaKey, s3Key, token }: { mediaKey: string, s3Key: string, token: string }) {
+function MediaItem({ mediaKey, s3Key }: { mediaKey: string, s3Key: string }) {
   const [url, setUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
@@ -157,7 +157,6 @@ export function ReviewImagesModal({ client, onClose }: { client: any, onClose: (
                   key={key}
                   mediaKey={key}
                   s3Key={mediaData[key]}
-                  token={client.id}
                 />
               ))}
             </div>
