@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException, ConflictException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { DocumentsService } from '../documents/documents.service.js';
 
 @Injectable()
 export class ApplicationsService {
@@ -15,7 +16,7 @@ export class ApplicationsService {
     return { res1, res2 };
   }
 
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService, private documentsService: DocumentsService) {}
 
   /** Global passport check — searches ALL CustomerProfiles across all agents.
    *  Normalizes the passport number (uppercase + trim) before comparison.
@@ -391,5 +392,9 @@ export class ApplicationsService {
       where: { applicationId: { in: ids } }
     });
     return { count: ids.length };
+  }
+
+  async getVerificationMediaDownloadUrl(key: string) {
+    return this.documentsService.getVerificationMediaDownloadUrl(key);
   }
 }

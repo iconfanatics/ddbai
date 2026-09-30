@@ -95,4 +95,13 @@ export class DocumentsService implements OnModuleInit {
       data: { status, rejectionNote }
     });
   }
+
+  async getVerificationMediaDownloadUrl(key: string): Promise<{ downloadUrl: string }> {
+    const command = new GetObjectCommand({
+      Bucket: this.bucketName,
+      Key: key,
+    });
+    const downloadUrl = await getSignedUrl(this.s3Client, command, { expiresIn: 3600 });
+    return { downloadUrl };
+  }
 }

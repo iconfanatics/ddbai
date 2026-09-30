@@ -39,6 +39,11 @@ export class ApplicationsController {
     return this.applicationsService.handleFaceVerificationWebhook(body);
   }
 
+  @Post('verification-media-url')
+  getVerificationMediaUrl(@Body() body: { key: string }) {
+    return this.applicationsService.getVerificationMediaDownloadUrl(body.key);
+  }
+
   @Post()
   create(@Body() body: { customerId: string, routeId?: string }) {
     return this.applicationsService.create(body);
