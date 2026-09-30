@@ -1,5 +1,5 @@
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 
 const MEDIA_LABELS: Record<string, string> = {
   passport: 'Passport',
@@ -18,13 +18,31 @@ const MEDIA_LABELS: Record<string, string> = {
 };
 
 function MediaItem({ mediaKey, s3Key }: { mediaKey: string, s3Key: string }) {
+  const [url, setUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const isVideo = mediaKey.includes('video');
   const label = MEDIA_LABELS[mediaKey] || mediaKey;
   
-  // Use direct stream endpoint
-  const url = `/api/applications/verification-media?key=${encodeURIComponent(s3Key)}`;
+  useEffect(() => {
+    const authToken = localStorage.getItem('token');
+    fetch(`/api/applications/verification-media?key=${encodeURIComponent(s3Key)}`, {
+      headers: { Authorization: `Bearer ${authToken}` }
+    })
+      .then(res => {
+        if (!res.ok) throw new Error('Failed to fetch media');
+        return res.blob();
+      })
+      .then(blob => {
+        const objectUrl = URL.createObjectURL(blob);
+        setUrl(objectUrl);
+        // We do not set loading to false here, we wait for the media element to fire onLoad/onLoadedData
+      })
+      .catch(() => {
+        setError(true);
+        setLoading(false);
+      });
+  }, [s3Key]);
 
   return (
     <div className="flex flex-col rounded-xl overflow-hidden border border-gray-200 bg-gray-50 shadow-sm">
