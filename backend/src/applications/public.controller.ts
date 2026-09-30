@@ -1,7 +1,7 @@
-import { Controller, Post, Body, Get, Param, Req } from '@nestjs/common';
+import { Controller, Post, Body, Get, Param, Req, Query, Res } from '@nestjs/common';
 import { ApplicationsService } from './applications.service.js';
 import { DocumentsService } from '../documents/documents.service.js';
-import type { Request } from 'express';
+import type { Request, Response } from 'express';
 
 @Controller('public')
 export class PublicController {
@@ -14,6 +14,20 @@ export class PublicController {
   @Get('verification/:token')
   async getVerificationDetails(@Param('token') token: string) {
     return this.applicationsService.getVerificationDetails(token);
+  }
+
+  @Get('verification-media')
+  async getVerificationMediaStream(@Query('key') key: string, @Res() res: Response) {
+    if (!key || !key.includes('verification/')) {
+      return res.status(403).send('Forbidden');
+    }
+    try {
+      const { stream, contentType } = await this.documentsService.getVerificationMediaStream(key);
+      res.setHeader('Content-Type', contentType || 'application/octet-stream');
+      stream.pipe(res);
+    } catch (err) {
+      res.status(404).send('Not found');
+    }
   }
 
   @Post('webhook/face-verification')
