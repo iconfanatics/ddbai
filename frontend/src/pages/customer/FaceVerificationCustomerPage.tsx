@@ -227,22 +227,62 @@ export default function FaceVerificationCustomerPage() {
   const recordVideo = (key: string, nextStatus: VerificationState) => {
     if (!streamRef.current) return;
     chunksRef.current = [];
-    const mr = new MediaRecorder(streamRef.current);
-    mediaRecorderRef.current = mr;
     
-    mr.ondataavailable = (e) => e.data.size > 0 && chunksRef.current.push(e.data);
-    mr.onstop = () => {
-      const blob = new Blob(chunksRef.current, { type: 'video/webm' });
-      setMediaFiles(prev => ({ ...prev, [key]: blob }));
-      setStatus(nextStatus);
-    };
+    try {
+      // Find supported mimeType for iOS Safari compatibility
+      let options: any = {};
+      if (MediaRecorder.isTypeSupported('video/webm;codecs=vp9')) {
+        options = { mimeType: 'video/webm;codecs=vp9' };
+      } else if (MediaRecorder.isTypeSupported('video/webm')) {
+        options = { mimeType: 'video/webm' };
+      } else if (MediaRecorder.isTypeSupported('video/mp4')) {
+        options = { mimeType: 'video/mp4' };
+      }
+      
+      const mr = new MediaRecorder(streamRef.current, options);
+      mediaRecorderRef.current = mr;
+      
+      mr.ondataavailable = (e) => {
+        if (e.data && e.data.size > 0) chunksRef.current.push(e.data);
+      };
+      
+      mr.onstop = () => {
+        const type = options.mimeType || 'video/webm';
+        const blob = new Blob(chunksRef.current, { type });
+        setMediaFiles(prev => ({ ...prev, [key]: blob }));
+        setStatus(nextStatus);
+      };
 
-    mr.start();
-    setIsRecording(true);
-    setTimeout(() => {
-      mr.stop();
-      setIsRecording(false);
-    }, 5000);
+      // Request data every 1 second to ensure chunks are pushed on iOS
+      mr.start(1000);
+      setIsRecording(true);
+      
+      setTimeout(() => {
+        if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+          mediaRecorderRef.current.stop();
+        }
+        setIsRecording(false);
+      }, 5000);
+    } catch (e) {
+      console.error("MediaRecorder failed:", e);
+      // Fallback: If MediaRecorder is entirely broken on this device, just capture a snapshot so it doesn't freeze
+      captureSnapshotFallback(key, nextStatus);
+    }
+  };
+
+  const captureSnapshotFallback = (key: string, nextStatus: VerificationState) => {
+    if (!videoRef.current) return;
+    const canvas = document.createElement('canvas');
+    canvas.width = videoRef.current.videoWidth;
+    canvas.height = videoRef.current.videoHeight;
+    canvas.getContext('2d')?.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
+    canvas.toBlob(blob => {
+      if (blob) {
+        setMediaFiles(prev => ({ ...prev, [key]: blob }));
+        setStatus(nextStatus);
+        setIsRecording(false);
+      }
+    }, 'image/jpeg', 0.9);
   };
 
   const submitAll = async () => {
