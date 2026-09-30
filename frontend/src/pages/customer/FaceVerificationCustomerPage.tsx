@@ -77,7 +77,7 @@ export default function FaceVerificationCustomerPage() {
   const startCamera = async () => {
     try {
       if (!streamRef.current) {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: 640, height: 480 }, audio: false });
+        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 720 } }, audio: false });
         streamRef.current = stream;
       }
       if (videoRef.current) {
@@ -101,7 +101,7 @@ export default function FaceVerificationCustomerPage() {
     const loop = async () => {
       if (!active) return;
       if (videoRef.current && videoRef.current.readyState === 4 && !isRecording && (status === 'selfie' || status.includes('video'))) {
-        const detection = await faceapi.detectSingleFace(videoRef.current, new faceapi.TinyFaceDetectorOptions());
+        const detection = await faceapi.detectSingleFace(videoRef.current, new faceapi.TinyFaceDetectorOptions({ inputSize: 224 }));
         const analysis = analyzeSelfieConditions(videoRef.current, detection);
         setIsFaceGood(analysis.isGood);
         setGuidanceMsg(analysis.message);
@@ -120,13 +120,27 @@ export default function FaceVerificationCustomerPage() {
     return () => { active = false; };
   }, [status, isRecording]);
 
+
+  // Auto-Capture logic when holdProgress hits 100%
+  useEffect(() => {
+    if (holdProgress >= 100 && !isRecording) {
+      if (status === 'selfie') {
+        captureSelfie();
+      } else if (status === 'face_video_1') {
+        recordVideo('face_video_1', 'face_video_2');
+      } else if (status === 'face_video_2') {
+        recordVideo('face_video_2', 'gesture');
+      }
+    }
+  }, [holdProgress, status, isRecording]);
+
   // Detection Loop for Gestures
   useEffect(() => {
     let active = true;
     const loop = async () => {
       if (!active) return;
       if (status === 'gesture' && videoRef.current && videoRef.current.readyState === 4) {
-        const detection = await faceapi.detectSingleFace(videoRef.current, new faceapi.TinyFaceDetectorOptions()).withFaceLandmarks();
+        const detection = await faceapi.detectSingleFace(videoRef.current, new faceapi.TinyFaceDetectorOptions({ inputSize: 224 })).withFaceLandmarks();
         if (detection) {
           const pose = detectHeadPose(detection.landmarks);
           const expectedGesture = GESTURES[currentGestureIndex];
