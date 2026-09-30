@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react';
+
+import { useState } from 'react';
 
 const MEDIA_LABELS: Record<string, string> = {
   passport: 'Passport',
