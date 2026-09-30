@@ -46,6 +46,7 @@ export default function FaceVerificationCustomerPage() {
   const [guidanceMsg, setGuidanceMsg] = useState('');
   
   const [currentGestureIndex, setCurrentGestureIndex] = useState(0);
+  const [selfiePreviewUrl, setSelfiePreviewUrl] = useState('');
   const [gestureProgress, setGestureProgress] = useState(0);
 
   // Load Models on Mount
@@ -134,6 +135,15 @@ export default function FaceVerificationCustomerPage() {
     }
   }, [holdProgress, status, isRecording]);
 
+
+  // Re-attach video stream if the video element remounts
+  useEffect(() => {
+    if (videoRef.current && streamRef.current && videoRef.current.srcObject !== streamRef.current) {
+      videoRef.current.srcObject = streamRef.current;
+      videoRef.current.play().catch(e => console.log("Play prevented:", e));
+    }
+  }, [status]);
+
   // Detection Loop for Gestures
   useEffect(() => {
     let active = true;
@@ -195,13 +205,20 @@ export default function FaceVerificationCustomerPage() {
     const canvas = document.createElement('canvas');
     canvas.width = videoRef.current.videoWidth;
     canvas.height = videoRef.current.videoHeight;
-    canvas.getContext('2d')?.drawImage(videoRef.current, 0, 0);
+    const ctx = canvas.getContext('2d');
+    if (ctx) {
+      // Draw mirrored if the video is mirrored via CSS
+      ctx.translate(canvas.width, 0);
+      ctx.scale(-1, 1);
+      ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
+    }
     canvas.toBlob(blob => {
       if (blob) {
         setMediaFiles(prev => ({ ...prev, selfie: blob }));
+        setSelfiePreviewUrl(URL.createObjectURL(blob));
         setStatus('selfie_review');
       }
-    }, 'image/jpeg');
+    }, 'image/jpeg', 0.9);
   };
 
   const recordVideo = (key: string, nextStatus: VerificationState) => {
@@ -370,7 +387,7 @@ export default function FaceVerificationCustomerPage() {
     return (
       <div className="min-h-screen bg-black flex flex-col font-sans">
         <div className="flex-1 bg-gray-900 flex items-center justify-center p-4">
-          <img src={URL.createObjectURL(mediaFiles.selfie!)} alt="Selfie" className="w-full max-w-sm rounded-3xl" />
+          <img src={selfiePreviewUrl} alt="Selfie" className="w-full max-w-sm rounded-3xl object-cover" />
         </div>
         <div className="bg-white p-6 pb-10 flex space-x-4 rtl:space-x-reverse rounded-t-3xl">
           <button onClick={() => setStatus('selfie')} className="flex-1 bg-gray-100 text-gray-800 font-bold py-4 rounded-2xl">{t.retry}</button>
