@@ -31,7 +31,21 @@ function MediaItem({ mediaKey, s3Key }: { mediaKey: string, s3Key: string }) {
       body: JSON.stringify({ key: s3Key }),
     })
       .then(r => r.json())
-      .then(d => { setUrl(d.downloadUrl); setLoading(false); })
+      .then(d => { 
+        // Backend returns an internal Docker URL (e.g. http://minio:9000)
+        // We must rewrite it to route through our public Caddy proxy
+        let finalUrl = d.downloadUrl;
+        if (finalUrl) {
+          try {
+            const urlObj = new URL(finalUrl);
+            finalUrl = window.location.origin + '/minio-api' + urlObj.pathname + urlObj.search;
+          } catch (e) {
+            // fallback if not a valid URL
+          }
+        }
+        setUrl(finalUrl); 
+        setLoading(false); 
+      })
       .catch(() => { setError(true); setLoading(false); });
   }, [s3Key]);
 
