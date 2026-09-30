@@ -291,7 +291,7 @@ export default function FaceVerificationCustomerPage() {
     }, 'image/jpeg', 0.9);
   };
 
-  const submitAll = async () => {
+   const submitAll = async () => {
     stopCamera();
     try {
       const mediaData: any = {};
@@ -300,16 +300,25 @@ export default function FaceVerificationCustomerPage() {
         const isVideo = file.type.includes('video') || file.type.includes('webm') || file.type.includes('mp4');
         const ext = isVideo ? 'webm' : 'jpg';
         const filename = `${key}.${ext}`;
-        
-        const resUrl = await fetch('/api/public/webhook/face-verification/upload-url', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ token, filename })
+        const contentType = file.type || (isVideo ? 'video/webm' : 'image/jpeg');
+
+        // Direct upload to backend — backend stores in Minio (no CORS issues)
+        const res = await fetch('/api/public/webhook/face-verification/upload', {
+          method: 'POST',
+          headers: {
+            'x-verification-token': token || '',
+            'x-filename': filename,
+            'content-type': contentType,
+          },
+          body: file,
         });
-        if (!resUrl.ok) throw new Error("Failed to get upload URL");
-        const { uploadUrl, key: s3Key } = await resUrl.json();
-        const finalUrl = uploadUrl.replace('http://minio:9000', window.location.origin + '/minio-api');
-        
-        await fetch(finalUrl, { method: 'PUT', body: file, headers: { 'Content-Type': file.type || 'video/webm' } });
+
+        if (!res.ok) {
+          const text = await res.text();
+          throw new Error(`Upload failed for ${filename}: ${text}`);
+        }
+
+        const { key: s3Key } = await res.json();
         mediaData[key] = s3Key;
       }
 
@@ -324,6 +333,7 @@ export default function FaceVerificationCustomerPage() {
       setErrorMessage(err.message);
     }
   };
+
 
   if (status === 'error') {
     return (

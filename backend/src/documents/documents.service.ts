@@ -9,9 +9,15 @@ export class DocumentsService implements OnModuleInit {
   private bucketName = 'visasync-documents';
 
   constructor(private prisma: PrismaService) {
+    const rawEndpoint = process.env.MINIO_ENDPOINT || 'minio';
+    // Ensure endpoint always has http:// and port
+    const endpoint = rawEndpoint.startsWith('http') 
+      ? rawEndpoint 
+      : `http://${rawEndpoint}:${process.env.MINIO_PORT || 9000}`;
+    
     this.s3Client = new S3Client({
       region: 'us-east-1',
-      endpoint: process.env.MINIO_ENDPOINT || 'http://minio:9000',
+      endpoint,
       credentials: {
         accessKeyId: process.env.MINIO_ROOT_USER || 'minioadmin',
         secretAccessKey: process.env.MINIO_ROOT_PASSWORD || 'minioadmin',
@@ -52,20 +58,23 @@ export class DocumentsService implements OnModuleInit {
     return { uploadUrl, documentId: doc.id, key };
   }
 
-  
-  async generateVerificationMediaUploadUrl(token: string, filename: string) {
-    const session = await this.prisma.verificationSession.findFirst({ where: { id: token } });
+
+  async uploadVerificationMedia(token: string, filename: string, buffer: Buffer, contentType: string): Promise<string> {
+    const session = await this.prisma.verificationSession.findUnique({ where: { id: token } });
     if (!session) throw new Error('Invalid token');
 
     const key = `verification/${session.id}/${Date.now()}-${filename}`;
     const command = new PutObjectCommand({
       Bucket: this.bucketName,
       Key: key,
+      Body: buffer,
+      ContentType: contentType,
     });
     
-    const uploadUrl = await getSignedUrl(this.s3Client, command, { expiresIn: 3600 });
-    return { uploadUrl, key };
+    await this.s3Client.send(command);
+    return key;
   }
+
 
   async getDownloadUrl(documentId: string) {
     const doc = await this.prisma.document.findUnique({ where: { id: documentId } });
