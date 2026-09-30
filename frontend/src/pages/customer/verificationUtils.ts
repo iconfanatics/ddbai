@@ -149,3 +149,66 @@ export const checkGesture = (gestureId: string, pose: { yaw: string, pitch: stri
     default: return false;
   }
 };
+
+
+export const analyzeSelfieConditions = (
+  video: HTMLVideoElement, 
+  detection: faceapi.FaceDetection | undefined
+): { isGood: boolean, message: string } => {
+  if (!detection) return { isGood: false, message: "Face not detected. Please look at the camera." };
+
+  const box = detection.box;
+  const videoW = video.videoWidth;
+  const videoH = video.videoHeight;
+
+  // 1. Check if face is centered and inside frame
+  // Frame is roughly the middle 50% of the screen
+  const isCenteredX = box.x > videoW * 0.15 && box.right < videoW * 0.85;
+  const isCenteredY = box.y > videoH * 0.1 && box.bottom < videoH * 0.9;
+  const isGoodSize = box.width > videoW * 0.2 && box.width < videoW * 0.7;
+
+  if (!isCenteredX || !isCenteredY || !isGoodSize) {
+    return { isGood: false, message: "Please position your face inside the frame." };
+  }
+
+  // 2. Pixel Analysis for Lighting
+  const canvas = document.createElement('canvas');
+  canvas.width = videoW;
+  canvas.height = videoH;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return { isGood: true, message: "Hold still..." };
+  
+  ctx.drawImage(video, 0, 0, videoW, videoH);
+  
+  // Sample Face Area Brightness
+  const faceImgData = ctx.getImageData(box.x, box.y, box.width, box.height).data;
+  let faceSum = 0;
+  for (let i = 0; i < faceImgData.length; i += 4) {
+    // RGB to grayscale approximation
+    faceSum += (faceImgData[i] + faceImgData[i+1] + faceImgData[i+2]) / 3;
+  }
+  const faceAvgBrightness = faceSum / (faceImgData.length / 4);
+
+  // Sample Background Area Brightness (Sample top left corner for example)
+  const bgImgData = ctx.getImageData(0, 0, videoW * 0.2, videoH * 0.2).data;
+  let bgSum = 0;
+  for (let i = 0; i < bgImgData.length; i += 4) {
+    bgSum += (bgImgData[i] + bgImgData[i+1] + bgImgData[i+2]) / 3;
+  }
+  const bgAvgBrightness = bgSum / (bgImgData.length / 4);
+
+  // 3. Logic based on brightness
+  if (faceAvgBrightness < 40 && bgAvgBrightness < 40) {
+    return { isGood: false, message: "Camera is blocked or too dark. Please move to a brighter area." };
+  }
+  
+  if (faceAvgBrightness < 60) {
+    return { isGood: false, message: "Face is too dark. Please move to a brighter area." };
+  }
+
+  if (bgAvgBrightness > 200 && faceAvgBrightness < 100) {
+    return { isGood: false, message: "Excessive backlight detected. Please avoid bright lights behind you." };
+  }
+
+  return { isGood: true, message: "Hold still..." };
+};

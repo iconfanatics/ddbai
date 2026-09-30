@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import * as faceapi from 'face-api.js';
-import { TRANSLATIONS, detectHeadPose, checkGesture } from './verificationUtils';
+import { TRANSLATIONS, detectHeadPose, checkGesture, analyzeSelfieConditions } from './verificationUtils';
 
 type Language = 'en' | 'ar' | 'pt';
 type VerificationState = 
@@ -43,6 +43,7 @@ export default function FaceVerificationCustomerPage() {
   const [isFaceGood, setIsFaceGood] = useState(false);
   const [holdProgress, setHoldProgress] = useState(0); // 0 to 100
   const [isRecording, setIsRecording] = useState(false);
+  const [guidanceMsg, setGuidanceMsg] = useState('');
   
   const [currentGestureIndex, setCurrentGestureIndex] = useState(0);
   const [gestureProgress, setGestureProgress] = useState(0);
@@ -101,10 +102,12 @@ export default function FaceVerificationCustomerPage() {
       if (!active) return;
       if (videoRef.current && videoRef.current.readyState === 4 && !isRecording && (status === 'selfie' || status.includes('video'))) {
         const detection = await faceapi.detectSingleFace(videoRef.current, new faceapi.TinyFaceDetectorOptions());
-        const isGood = !!detection && detection.score > 0.8;
-        setIsFaceGood(isGood);
+        const analysis = analyzeSelfieConditions(videoRef.current, detection);
+        setIsFaceGood(analysis.isGood);
+        setGuidanceMsg(analysis.message);
+        
         setHoldProgress(prev => {
-          if (isGood) return Math.min(prev + 10, 100);
+          if (analysis.isGood) return Math.min(prev + 10, 100);
           return Math.max(prev - 20, 0);
         });
       }
@@ -436,9 +439,9 @@ export default function FaceVerificationCustomerPage() {
         {/* Progress UI */}
         <div className="absolute bottom-8 left-6 right-6">
           <div className="bg-white/95 backdrop-blur rounded-2xl p-4 shadow-lg flex flex-col items-center">
-            <div className="flex items-center text-[#0E1B31] font-bold text-sm mb-2">
-              <svg className="w-5 h-5 mr-2 text-blue-500" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd"/></svg>
-              {status === 'gesture' ? "Hold the position..." : t.holdStill}
+            <div className="flex items-center text-[#0E1B31] font-bold text-sm mb-2 text-center">
+              <svg className={`w-5 h-5 mr-2 ${isFaceGood || status === 'gesture' ? 'text-blue-500' : 'text-red-500'}`} fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd"/></svg>
+              {status === 'gesture' ? "Hold the position..." : guidanceMsg || t.holdStill}
             </div>
             
             <div className="w-full bg-gray-200 rounded-full h-2.5 mb-1 overflow-hidden">
