@@ -1,10 +1,17 @@
 visaoraworld.com, www.visaoraworld.com {
     root * /srv
 
+
     handle /api/* {
         uri strip_prefix /api
         reverse_proxy backend-api:3001
     }
+
+    handle /minio-api/* {
+        uri strip_prefix /minio-api
+        reverse_proxy minio:9000
+    }
+
 
     handle {
         try_files {path} /index.html
@@ -15,10 +22,17 @@ visaoraworld.com, www.visaoraworld.com {
 :80 {
     root * /srv
 
+
     handle /api/* {
         uri strip_prefix /api
         reverse_proxy backend-api:3001
     }
+
+    handle /minio-api/* {
+        uri strip_prefix /minio-api
+        reverse_proxy minio:9000
+    }
+
 
     handle {
         try_files {path} /index.html

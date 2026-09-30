@@ -227,8 +227,10 @@ export default function FaceVerificationCustomerPage() {
         });
         if (!resUrl.ok) throw new Error("Failed to get upload URL");
         const { uploadUrl, key: s3Key } = await resUrl.json();
+        let finalUrl = uploadUrl.replace('http://minio:9000', window.location.origin + '/minio-api');
         
-        await fetch(uploadUrl, { method: 'PUT', body: file, headers: { 'Content-Type': file.type } });
+        const putRes = await fetch(finalUrl, { method: 'PUT', body: file, headers: { 'Content-Type': file.type } });
+        if (!putRes.ok) throw new Error("Upload failed for " + filename);
         mediaData[key] = s3Key;
       }
 

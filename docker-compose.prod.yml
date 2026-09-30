@@ -25,6 +25,7 @@ services:
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-prodadmin}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-prodpassword}
+      MINIO_API_CORS_ALLOW_ORIGIN: '*'
     volumes:
       - prod_minio_data:/data
     restart: always
@@ -42,6 +43,7 @@ services:
       MINIO_PORT: 9000
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-prodadmin}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-prodpassword}
+      MINIO_API_CORS_ALLOW_ORIGIN: '*'
       NODE_ENV: production
     depends_on:
       - db
