@@ -313,7 +313,7 @@ export class ApplicationsService {
     };
   }
 
-  async handleFaceVerificationWebhook(body: { token: string, status: string, matchScore?: number, notes?: string }) {
+  async handleFaceVerificationWebhook(body: { token: string, status: string, matchScore?: number, notes?: string, mediaData?: any }) {
     const session = await this.prisma.verificationSession.findFirst({
       where: { id: body.token }
     });
@@ -326,11 +326,12 @@ export class ApplicationsService {
       data: {
         status: body.status,
         score: body.matchScore,
-        notes: body.notes
+        notes: body.notes,
+        ...(body.mediaData ? { mediaData: body.mediaData } : {})
       }
     });
 
-    if (body.status === 'VERIFIED') {
+    if (body.status === 'VERIFIED' || body.status === 'COMPLETED' || body.status === 'PASSED') {
       await this.prisma.application.update({
         where: { id: session.applicationId },
         data: {
