@@ -175,6 +175,85 @@ export default function FaceVerificationCustomerPage() {
     }
   }, [gestureProgress]);
 
+  const recordVideo = useCallback((key: string, nextStatus: VerificationState | null, duration: number = 5, onComplete?: () => void) => {
+    if (!streamRef.current || isRecording) return;
+    chunksRef.current = [];
+    
+    const mimeTypes = ['video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm', 'video/mp4', ''];
+    const supportedMime = mimeTypes.find(mime => {
+      try { return mime === '' || MediaRecorder.isTypeSupported(mime); } catch { return false; }
+    }) ?? '';
+    
+    try {
+      const options = supportedMime ? { mimeType: supportedMime } : {};
+      const mr = new MediaRecorder(streamRef.current, options);
+      mediaRecorderRef.current = mr;
+      
+      mr.ondataavailable = (e) => {
+        if (e.data && e.data.size > 0) chunksRef.current.push(e.data);
+      };
+      
+      mr.onstop = () => {
+        const blob = new Blob(chunksRef.current, { type: supportedMime || 'video/webm' });
+        setMediaFiles(prev => ({ ...prev, [key]: blob }));
+        setIsRecording(false);
+        setCountdown(0);
+        if (nextStatus) setStatusSafe(nextStatus);
+        if (onComplete) onComplete();
+      };
+
+      mr.start(500);
+      setIsRecording(true);
+      
+      // Countdown timer
+      let secs = duration;
+      setCountdown(secs);
+      const interval = setInterval(() => {
+        secs--;
+        setCountdown(secs);
+        if (secs <= 0) clearInterval(interval);
+      }, 1000);
+      
+      setTimeout(() => {
+        clearInterval(interval);
+        try {
+          if (mr.state !== 'inactive') {
+            mr.requestData();
+            mr.stop();
+          } else {
+            // MediaRecorder never started properly - use snapshot fallback
+            setIsRecording(false);
+            setCountdown(0);
+            captureSnapshotFallback(key, nextStatus, onComplete);
+          }
+        } catch (err) {
+          setIsRecording(false);
+          setCountdown(0);
+          captureSnapshotFallback(key, nextStatus, onComplete);
+        }
+      }, duration * 1000);
+      
+    } catch (e) {
+      captureSnapshotFallback(key, nextStatus, onComplete);
+    }
+  }, [isRecording]);
+
+  const captureSnapshotFallback = (key: string, nextStatus: VerificationState | null, onComplete?: () => void) => {
+    if (!videoRef.current) { if (nextStatus) setStatusSafe(nextStatus);
+        if (onComplete) onComplete(); return; }
+    const canvas = document.createElement('canvas');
+    canvas.width = videoRef.current.videoWidth || 640;
+    canvas.height = videoRef.current.videoHeight || 480;
+    canvas.getContext('2d')?.drawImage(videoRef.current, 0, 0);
+    canvas.toBlob(blob => {
+      if (blob) setMediaFiles(prev => ({ ...prev, [key]: blob }));
+      setIsRecording(false);
+      setCountdown(0);
+      if (nextStatus) setStatusSafe(nextStatus);
+        if (onComplete) onComplete();
+    }, 'image/jpeg', 0.9);
+  };
+
   const handleGestureComplete = useCallback(() => {
     if (!videoRef.current || isRecording) return;
     setGestureProgress(0);
@@ -259,84 +338,7 @@ export default function FaceVerificationCustomerPage() {
     setStatusSafe('selfie_review');
   }, [mediaFiles.passport]);
 
-  const recordVideo = useCallback((key: string, nextStatus: VerificationState | null, duration: number = 5, onComplete?: () => void) => {
-    if (!streamRef.current || isRecording) return;
-    chunksRef.current = [];
-    
-    const mimeTypes = ['video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm', 'video/mp4', ''];
-    const supportedMime = mimeTypes.find(mime => {
-      try { return mime === '' || MediaRecorder.isTypeSupported(mime); } catch { return false; }
-    }) ?? '';
-    
-    try {
-      const options = supportedMime ? { mimeType: supportedMime } : {};
-      const mr = new MediaRecorder(streamRef.current, options);
-      mediaRecorderRef.current = mr;
-      
-      mr.ondataavailable = (e) => {
-        if (e.data && e.data.size > 0) chunksRef.current.push(e.data);
-      };
-      
-      mr.onstop = () => {
-        const blob = new Blob(chunksRef.current, { type: supportedMime || 'video/webm' });
-        setMediaFiles(prev => ({ ...prev, [key]: blob }));
-        setIsRecording(false);
-        setCountdown(0);
-        if (nextStatus) setStatusSafe(nextStatus);
-        if (onComplete) onComplete();
-      };
 
-      mr.start(500);
-      setIsRecording(true);
-      
-      // Countdown timer
-      let secs = duration;
-      setCountdown(secs);
-      const interval = setInterval(() => {
-        secs--;
-        setCountdown(secs);
-        if (secs <= 0) clearInterval(interval);
-      }, 1000);
-      
-      setTimeout(() => {
-        clearInterval(interval);
-        try {
-          if (mr.state !== 'inactive') {
-            mr.requestData();
-            mr.stop();
-          } else {
-            // MediaRecorder never started properly - use snapshot fallback
-            setIsRecording(false);
-            setCountdown(0);
-            captureSnapshotFallback(key, nextStatus, onComplete);
-          }
-        } catch (err) {
-          setIsRecording(false);
-          setCountdown(0);
-          captureSnapshotFallback(key, nextStatus, onComplete);
-        }
-      }, duration * 1000);
-      
-    } catch (e) {
-      captureSnapshotFallback(key, nextStatus, onComplete);
-    }
-  }, [isRecording]);
-
-  const captureSnapshotFallback = (key: string, nextStatus: VerificationState | null, onComplete?: () => void) => {
-    if (!videoRef.current) { if (nextStatus) setStatusSafe(nextStatus);
-        if (onComplete) onComplete(); return; }
-    const canvas = document.createElement('canvas');
-    canvas.width = videoRef.current.videoWidth || 640;
-    canvas.height = videoRef.current.videoHeight || 480;
-    canvas.getContext('2d')?.drawImage(videoRef.current, 0, 0);
-    canvas.toBlob(blob => {
-      if (blob) setMediaFiles(prev => ({ ...prev, [key]: blob }));
-      setIsRecording(false);
-      setCountdown(0);
-      if (nextStatus) setStatusSafe(nextStatus);
-        if (onComplete) onComplete();
-    }, 'image/jpeg', 0.9);
-  };
 
    const submitAll = async () => {
     stopCamera();

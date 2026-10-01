@@ -20,7 +20,7 @@ const MEDIA_LABELS: Record<string, string> = {
 function MediaItem({ mediaKey, s3Key }: { mediaKey: string, s3Key: string }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
-  const isVideo = mediaKey.includes('video');
+  const isVideo = mediaKey.includes('video') || mediaKey.includes('gesture');
   const label = MEDIA_LABELS[mediaKey] || mediaKey;
   
   // Use public stream endpoint (key acts as the security token since it contains unguessable UUID)
