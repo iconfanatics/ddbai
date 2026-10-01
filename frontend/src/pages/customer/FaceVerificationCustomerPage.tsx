@@ -185,7 +185,7 @@ export default function FaceVerificationCustomerPage() {
     }) ?? '';
     
     try {
-      const options = supportedMime ? { mimeType: supportedMime } : {};
+      const options: MediaRecorderOptions = supportedMime ? { mimeType: supportedMime, videoBitsPerSecond: 250000 } : { videoBitsPerSecond: 250000 };
       const mr = new MediaRecorder(streamRef.current, options);
       mediaRecorderRef.current = mr;
       
@@ -344,14 +344,14 @@ export default function FaceVerificationCustomerPage() {
     stopCamera();
     try {
       const mediaData: any = {};
-      for (const [key, file] of Object.entries(mediaFiles)) {
-        if (!file) continue;
+      
+      const uploadPromises = Object.entries(mediaFiles).map(async ([key, file]) => {
+        if (!file) return null;
         const isVideo = file.type.includes('video') || file.type.includes('webm') || file.type.includes('mp4');
         const ext = isVideo ? 'webm' : 'jpg';
         const filename = `${key}.${ext}`;
         const contentType = file.type || (isVideo ? 'video/webm' : 'image/jpeg');
 
-        // Direct upload to backend — backend stores in Minio (no CORS issues)
         const res = await fetch('/api/public/webhook/face-verification/upload', {
           method: 'POST',
           headers: {
@@ -368,8 +368,13 @@ export default function FaceVerificationCustomerPage() {
         }
 
         const { key: s3Key } = await res.json();
-        mediaData[key] = s3Key;
-      }
+        return { key, s3Key };
+      });
+
+      const results = await Promise.all(uploadPromises);
+      results.forEach(res => {
+        if (res) mediaData[res.key] = res.s3Key;
+      });
 
       const resFin = await fetch('/api/public/webhook/face-verification', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
