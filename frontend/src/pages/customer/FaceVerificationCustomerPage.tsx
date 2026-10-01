@@ -554,7 +554,7 @@ export default function FaceVerificationCustomerPage() {
             </div>
 
             {/* Direction Arrow inside circle */}
-            {gestureUI?.arrowRot !== null && (
+            {gestureUI && gestureUI.arrowRot !== null && (
               <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                 <svg className="w-16 h-16 text-white drop-shadow-md" style={{ transform: `rotate(${gestureUI.arrowRot}deg)` }} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M12 19V5M5 12l7-7 7 7"/>
@@ -564,7 +564,7 @@ export default function FaceVerificationCustomerPage() {
           </div>
 
           {/* Yellow Arc (Mocked as a curved border behind the main circle) */}
-          {gestureUI?.arrowRot !== null && (
+          {gestureUI && gestureUI.arrowRot !== null && (
             <div className="absolute inset-0 rounded-full border-8 border-transparent pointer-events-none" style={{
               transform: `rotate(${gestureUI.arrowRot - 45}deg)`,
               borderTopColor: '#FBBF24',
@@ -573,7 +573,7 @@ export default function FaceVerificationCustomerPage() {
           )}
 
           {/* Green Marker on edge */}
-          {gestureUI?.marker && (
+          {gestureUI && gestureUI.marker && (
             <div 
               className="absolute w-8 h-8 bg-green-400 border-4 border-white rounded-full shadow-md z-10 transition-all duration-500"
               style={{
