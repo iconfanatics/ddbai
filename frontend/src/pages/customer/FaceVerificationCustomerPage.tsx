@@ -168,12 +168,6 @@ export default function FaceVerificationCustomerPage() {
     return () => { active = false; };
   }, [status, isRecording, currentGestureIndex]);
 
-  // Gesture completion check
-  useEffect(() => {
-    if (gestureProgress >= 100 && status === 'gesture') {
-      handleGestureComplete();
-    }
-  }, [gestureProgress]);
 
   const recordVideo = useCallback((key: string, nextStatus: VerificationState | null, duration: number = 5, onComplete?: () => void) => {
     if (!streamRef.current || isRecording) return;
@@ -269,10 +263,15 @@ export default function FaceVerificationCustomerPage() {
   const handleGestureComplete = useCallback(() => {
     if (!videoRef.current) return;
     setGestureProgress(0);
-    if (isRecording) {
-      stopRecording();
+    stopRecording();
+  }, [stopRecording]);
+
+  // Gesture completion check
+  useEffect(() => {
+    if (gestureProgress >= 100 && status === 'gesture') {
+      handleGestureComplete();
     }
-  }, [isRecording, stopRecording]);
+  }, [gestureProgress, status, handleGestureComplete]);
 
   useEffect(() => {
     if (status === 'gesture' && !isRecording && currentGestureIndex < GESTURES.length) {
