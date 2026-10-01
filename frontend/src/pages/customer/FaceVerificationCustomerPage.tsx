@@ -337,10 +337,10 @@ export default function FaceVerificationCustomerPage() {
           
           // Draw cropped face over passport photo area
           // Adjusted slightly left and down to fit better without covering text
-          const pw = passportImg.width * 0.22;
+          const pw = passportImg.width * 0.27;
           const ph = pw * (cropH / cropW); // maintain aspect ratio
-          const px = passportImg.width * 0.05; // 5% from left edge
-          const py = passportImg.height * 0.28;
+          const px = passportImg.width * 0.07;
+          const py = passportImg.height * 0.26;
           
           compCtx.drawImage(croppedFaceCanvas, px, py, pw, ph);
           finalCanvas = compCanvas;
