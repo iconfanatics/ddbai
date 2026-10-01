@@ -481,15 +481,15 @@ export default function FaceVerificationCustomerPage() {
 
   const getGestureUI = (index: number) => {
     switch(index) {
-      case 0: return { icon: '↓', label: 'Look down', arrowRot: 90, marker: { left: '50%', top: '100%' } };
-      case 1: return { icon: '↙', label: 'Look down-left', arrowRot: 135, marker: { left: '14.6%', top: '85.4%' } };
-      case 2: return { icon: '↘', label: 'Look down-right', arrowRot: 45, marker: { left: '85.4%', top: '85.4%' } };
-      case 3: return { icon: '←', label: 'Look left', arrowRot: 180, marker: { left: '0%', top: '50%' } };
-      case 4: return { icon: '→', label: 'Look right', arrowRot: 0, marker: { left: '100%', top: '50%' } };
+      case 0: return { icon: '↓', label: 'Look down', arrowRot: 180, marker: { left: '50%', top: '100%' } };
+      case 1: return { icon: '↙', label: 'Look down-left', arrowRot: 225, marker: { left: '14.6%', top: '85.4%' } };
+      case 2: return { icon: '↘', label: 'Look down-right', arrowRot: 135, marker: { left: '85.4%', top: '85.4%' } };
+      case 3: return { icon: '←', label: 'Look left', arrowRot: 270, marker: { left: '0%', top: '50%' } };
+      case 4: return { icon: '→', label: 'Look right', arrowRot: 90, marker: { left: '100%', top: '50%' } };
       case 5: return { icon: '☺', label: 'Look at the camera', arrowRot: null, marker: null };
-      case 6: return { icon: '↑', label: 'Look up', arrowRot: -90, marker: { left: '50%', top: '0%' } };
-      case 7: return { icon: '↖', label: 'Look up-left', arrowRot: -135, marker: { left: '14.6%', top: '14.6%' } };
-      case 8: return { icon: '↗', label: 'Look up-right', arrowRot: -45, marker: { left: '85.4%', top: '14.6%' } };
+      case 6: return { icon: '↑', label: 'Look up', arrowRot: 0, marker: { left: '50%', top: '0%' } };
+      case 7: return { icon: '↖', label: 'Look up-left', arrowRot: 315, marker: { left: '14.6%', top: '14.6%' } };
+      case 8: return { icon: '↗', label: 'Look up-right', arrowRot: 45, marker: { left: '85.4%', top: '14.6%' } };
       default: return { icon: '', label: '', arrowRot: null, marker: null };
     }
   };
