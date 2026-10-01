@@ -138,7 +138,7 @@ export default function FaceVerificationCustomerPage() {
           }
         }
         
-        if (currentStatus === 'gesture' && !isRecording) {
+        if (currentStatus === 'gesture') {
           try {
             const detection = await faceapi.detectSingleFace(videoRef.current, new faceapi.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: 0.5 })).withFaceLandmarks();
             if (detection) {
