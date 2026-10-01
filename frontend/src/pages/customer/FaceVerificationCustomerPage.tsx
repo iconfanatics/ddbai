@@ -205,38 +205,50 @@ export default function FaceVerificationCustomerPage() {
       mr.start(500);
       setIsRecording(true);
       
-      // Countdown timer
-      let secs = duration;
-      setCountdown(secs);
-      const interval = setInterval(() => {
-        secs--;
+      if (duration > 0) {
+        // Countdown timer
+        let secs = duration;
         setCountdown(secs);
-        if (secs <= 0) clearInterval(interval);
-      }, 1000);
-      
-      setTimeout(() => {
-        clearInterval(interval);
-        try {
-          if (mr.state !== 'inactive') {
-            mr.requestData();
-            mr.stop();
-          } else {
-            // MediaRecorder never started properly - use snapshot fallback
+        const interval = setInterval(() => {
+          secs--;
+          setCountdown(secs);
+          if (secs <= 0) clearInterval(interval);
+        }, 1000);
+        
+        setTimeout(() => {
+          clearInterval(interval);
+          try {
+            if (mr.state !== 'inactive') {
+              mr.requestData();
+              mr.stop();
+            } else {
+              setIsRecording(false);
+              setCountdown(0);
+              captureSnapshotFallback(key, nextStatus, onComplete);
+            }
+          } catch (err) {
             setIsRecording(false);
             setCountdown(0);
             captureSnapshotFallback(key, nextStatus, onComplete);
           }
-        } catch (err) {
-          setIsRecording(false);
-          setCountdown(0);
-          captureSnapshotFallback(key, nextStatus, onComplete);
-        }
-      }, duration * 1000);
+        }, duration * 1000);
+      }
       
     } catch (e) {
       captureSnapshotFallback(key, nextStatus, onComplete);
     }
   }, [isRecording]);
+
+  const stopRecording = useCallback(() => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      try {
+        mediaRecorderRef.current.requestData();
+        mediaRecorderRef.current.stop();
+      } catch (e) {
+        console.error("Failed to stop recording cleanly", e);
+      }
+    }
+  }, []);
 
   const captureSnapshotFallback = (key: string, nextStatus: VerificationState | null, onComplete?: () => void) => {
     if (!videoRef.current) { if (nextStatus) setStatusSafe(nextStatus);
@@ -255,18 +267,26 @@ export default function FaceVerificationCustomerPage() {
   };
 
   const handleGestureComplete = useCallback(() => {
-    if (!videoRef.current || isRecording) return;
+    if (!videoRef.current) return;
     setGestureProgress(0);
-    recordVideo(`gesture_0${currentGestureIndex + 1}`, null, 3, () => {
-      setCurrentGestureIndex(prev => {
-        const next = prev + 1;
-        if (next >= GESTURES.length) {
-          setTimeout(() => setStatusSafe('summary'), 300);
-        }
-        return next >= GESTURES.length ? prev : next;
+    if (isRecording) {
+      stopRecording();
+    }
+  }, [isRecording, stopRecording]);
+
+  useEffect(() => {
+    if (status === 'gesture' && !isRecording && currentGestureIndex < GESTURES.length) {
+      recordVideo(`gesture_0${currentGestureIndex + 1}`, null, 0, () => {
+        setCurrentGestureIndex(prev => {
+          const next = prev + 1;
+          if (next >= GESTURES.length) {
+            setTimeout(() => setStatusSafe('summary'), 300);
+          }
+          return next;
+        });
       });
-    });
-  }, [currentGestureIndex, isRecording, recordVideo]);
+    }
+  }, [status, currentGestureIndex, isRecording, recordVideo]);
 
   const captureSelfie = useCallback(async () => {
     if (!videoRef.current || videoRef.current.readyState < 2) return;
