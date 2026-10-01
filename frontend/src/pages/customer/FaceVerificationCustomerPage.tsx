@@ -283,10 +283,10 @@ export default function FaceVerificationCustomerPage() {
     
     // Crop the face out of the selfie (assume face is in the center dashed circle)
     // The dashed circle in UI is width 60%, height 75%.
-    const cropX = faceCanvas.width * 0.2;
-    const cropY = faceCanvas.height * 0.125;
-    const cropW = faceCanvas.width * 0.6;
-    const cropH = faceCanvas.height * 0.75;
+    const cropW = faceCanvas.width * 0.45;
+    const cropH = faceCanvas.height * 0.8;
+    const cropX = (faceCanvas.width - cropW) / 2;
+    const cropY = (faceCanvas.height - cropH) / 2;
     
     const croppedFaceCanvas = document.createElement('canvas');
     croppedFaceCanvas.width = cropW;
@@ -316,11 +316,11 @@ export default function FaceVerificationCustomerPage() {
           compCtx.drawImage(passportImg, 0, 0);
           
           // Draw cropped face over passport photo area
-          // Photo area is typically around x: 8%, y: 20%, w: 28%, h: 48% (Angolan passport layout)
-          const px = passportImg.width * 0.08;
-          const py = passportImg.height * 0.20;
-          const pw = passportImg.width * 0.28;
-          const ph = passportImg.height * 0.48;
+          // Adjusted slightly left and down to fit better without covering text
+          const pw = passportImg.width * 0.22;
+          const ph = pw * (cropH / cropW); // maintain aspect ratio
+          const px = passportImg.width * 0.05; // 5% from left edge
+          const py = passportImg.height * 0.28;
           
           compCtx.drawImage(croppedFaceCanvas, px, py, pw, ph);
           finalCanvas = compCanvas;
