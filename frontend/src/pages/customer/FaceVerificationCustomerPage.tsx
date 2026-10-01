@@ -479,10 +479,27 @@ export default function FaceVerificationCustomerPage() {
   const isVideoStep = status === 'face_video_1' || status === 'face_video_2';
   const canCapture = isFaceGood && !isRecording;
 
+  const getGestureUI = (index: number) => {
+    switch(index) {
+      case 0: return { icon: '↓', label: 'Look down', arrowRot: 90, marker: { left: '50%', top: '100%' } };
+      case 1: return { icon: '↙', label: 'Look down-left', arrowRot: 135, marker: { left: '14.6%', top: '85.4%' } };
+      case 2: return { icon: '↘', label: 'Look down-right', arrowRot: 45, marker: { left: '85.4%', top: '85.4%' } };
+      case 3: return { icon: '←', label: 'Look left', arrowRot: 180, marker: { left: '0%', top: '50%' } };
+      case 4: return { icon: '→', label: 'Look right', arrowRot: 0, marker: { left: '100%', top: '50%' } };
+      case 5: return { icon: '☺', label: 'Look at the camera', arrowRot: null, marker: null };
+      case 6: return { icon: '↑', label: 'Look up', arrowRot: -90, marker: { left: '50%', top: '0%' } };
+      case 7: return { icon: '↖', label: 'Look up-left', arrowRot: -135, marker: { left: '14.6%', top: '14.6%' } };
+      case 8: return { icon: '↗', label: 'Look up-right', arrowRot: -45, marker: { left: '85.4%', top: '14.6%' } };
+      default: return { icon: '', label: '', arrowRot: null, marker: null };
+    }
+  };
+
+  const gestureUI = status === 'gesture' ? getGestureUI(currentGestureIndex) : null;
+
   return (
-    <div className="min-h-screen bg-white flex flex-col font-sans relative" dir={lang === 'ar' ? 'rtl' : 'ltr'}>
+    <div className="min-h-screen bg-[#F5F7FA] flex flex-col font-sans relative" dir={lang === 'ar' ? 'rtl' : 'ltr'}>
       
-      {/* Selfie Review Overlay - keeps camera mounted in background */}
+      {/* Selfie Review Overlay */}
       {status === 'selfie_review' && (
         <div className="absolute inset-0 z-50 bg-black flex flex-col font-sans">
           <div className="flex-1 bg-gray-900 flex items-center justify-center p-4">
@@ -500,73 +517,112 @@ export default function FaceVerificationCustomerPage() {
       )}
 
       {/* Header */}
-      <div className="text-center px-6 pt-6 pb-3 bg-white z-10">
-        <img src="/logo.png" alt="Visaora" className="h-10 mx-auto mb-3" onError={(e)=>e.currentTarget.style.display='none'}/>
-        <h2 className="text-[#0E1B31] font-extrabold text-xl">
-          {status === 'selfie' && t.lookAtCamera}
-          {status === 'face_video_1' && `${t.video1} — Look at camera`}
-          {status === 'face_video_2' && `${t.video2} — Look at camera`}
-          {status === 'gesture' && GESTURES[currentGestureIndex]}
-        </h2>
-        {status === 'gesture' && (
-          <p className="text-xs text-gray-500 mt-1">{currentGestureIndex + 1} of {GESTURES.length}</p>
-        )}
+      <div className="text-center px-6 pt-6 pb-4 bg-white z-10 rounded-b-3xl shadow-sm">
+        <img src="/logo.png" alt="Visaora" className="h-8 mx-auto mb-4" onError={(e)=>e.currentTarget.style.display='none'}/>
+        <div className="flex items-center justify-between">
+          {status === 'gesture' && (
+            <div className="w-8 h-8 rounded-full bg-[#0E1B31] text-white font-bold flex items-center justify-center text-sm shadow">
+              {currentGestureIndex + 1}
+            </div>
+          )}
+          <div className="flex-1">
+            <h2 className="text-[#0E1B31] font-extrabold text-2xl">
+              {status === 'selfie' && 'Look at the Camera'}
+              {status === 'face_video_1' && 'Video 1'}
+              {status === 'face_video_2' && 'Video 2'}
+            </h2>
+          </div>
+          {status === 'gesture' && <div className="w-8" />}
+        </div>
       </div>
 
-      {/* Video Viewfinder */}
-      <div className="flex-1 relative flex items-center justify-center bg-gray-100 overflow-hidden">
-        <video ref={videoRef} autoPlay playsInline muted className="absolute inset-0 w-full h-full object-cover transform scale-x-[-1]" />
-        
-        {/* Face Guide */}
-        <div className="absolute inset-0 pointer-events-none flex flex-col items-center justify-center px-6">
-          <div className={`w-[220px] h-[290px] border-4 rounded-[110px] transition-all duration-300 ${
-            status === 'gesture' 
-              ? (gestureProgress > 0 ? 'border-green-400 shadow-lg shadow-green-400/30' : 'border-white/50 border-dashed')
-              : (isFaceGood ? 'border-blue-400 shadow-lg shadow-blue-400/30' : 'border-white/50 border-dashed')
-          }`}></div>
-        </div>
-
-        {/* Recording indicator */}
-        {isRecording && (
-          <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-red-500 text-white px-5 py-2 rounded-full text-sm font-bold flex items-center shadow-lg animate-pulse">
-            <div className="w-2.5 h-2.5 bg-white rounded-full mr-2"></div>
-            REC {countdown > 0 ? `${countdown}s` : ''}
-          </div>
-        )}
-
-        {/* Guidance message */}
-        <div className="absolute bottom-4 left-4 right-4">
-          <div className="bg-black/60 backdrop-blur-sm rounded-2xl px-4 py-3 text-center">
-            <p className={`text-sm font-bold ${
-              status === 'gesture' 
-                ? (gestureProgress > 0 ? 'text-green-400' : 'text-white')
-                : (isFaceGood ? 'text-green-400' : 'text-yellow-400')
-            }`}>
-              {status === 'gesture' 
-                ? (gestureProgress > 0 ? `Hold it... ${gestureProgress}%` : `Do: ${GESTURES[currentGestureIndex]}`)
-                : (isRecording ? `Recording... ${countdown}s` : (guidanceMsg || 'Detecting face...'))}
-            </p>
+      {/* Video Viewfinder Container */}
+      <div className="flex-1 flex flex-col items-center justify-center px-6 py-4">
+        <div className="relative w-full max-w-[320px] aspect-square">
+          {/* Main Circle Camera */}
+          <div className={`absolute inset-0 rounded-full overflow-hidden border-4 transition-colors duration-300 ${isRecording || gestureProgress > 0 ? 'border-green-400 shadow-[0_0_20px_rgba(74,222,128,0.5)]' : 'border-[#0E1B31]'}`}>
+            <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover transform scale-x-[-1]" />
             
-            {/* Progress bar */}
-            {status === 'gesture' && (
-              <div className="w-full bg-white/20 rounded-full h-2 mt-2 overflow-hidden">
-                <div className="bg-green-400 h-2 rounded-full transition-all duration-200" style={{ width: `${gestureProgress}%` }}></div>
+            {/* Selfie Blur Edge Effect */}
+            {status === 'selfie' && (
+              <div className="absolute inset-0 rounded-full shadow-[inset_0_0_40px_20px_rgba(255,255,255,1)] pointer-events-none"></div>
+            )}
+
+            {/* Dotted Face Guide */}
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+              <div className={`w-[60%] h-[75%] border-2 rounded-[100px] border-dashed transition-all duration-300 ${isFaceGood ? 'border-white' : 'border-white/40'}`}></div>
+            </div>
+
+            {/* Direction Arrow inside circle */}
+            {gestureUI?.arrowRot !== null && (
+              <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                <svg className="w-16 h-16 text-white drop-shadow-md" style={{ transform: `rotate(${gestureUI.arrowRot}deg)` }} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M12 19V5M5 12l7-7 7 7"/>
+                </svg>
               </div>
             )}
           </div>
+
+          {/* Yellow Arc (Mocked as a curved border behind the main circle) */}
+          {gestureUI?.arrowRot !== null && (
+            <div className="absolute inset-0 rounded-full border-8 border-transparent pointer-events-none" style={{
+              transform: `rotate(${gestureUI.arrowRot - 45}deg)`,
+              borderTopColor: '#FBBF24',
+              margin: '-8px' // Push it outside the main border
+            }}></div>
+          )}
+
+          {/* Green Marker on edge */}
+          {gestureUI?.marker && (
+            <div 
+              className="absolute w-8 h-8 bg-green-400 border-4 border-white rounded-full shadow-md z-10 transition-all duration-500"
+              style={{
+                left: gestureUI.marker.left,
+                top: gestureUI.marker.top,
+                transform: 'translate(-50%, -50%)'
+              }}
+            ></div>
+          )}
+        </div>
+
+        {/* Status / Instruction Box below camera */}
+        <div className="mt-10 bg-white rounded-3xl p-5 w-full max-w-[320px] shadow-sm border border-gray-100 flex flex-col items-center">
+          <div className="flex items-center text-[#0E1B31] font-bold text-lg mb-3">
+            {status === 'selfie' && <><svg className="w-6 h-6 mr-2 text-[#0052FF]" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd"/></svg>Hold still...</>}
+            {isVideoStep && <><svg className="w-6 h-6 mr-2 text-[#0052FF]" fill="currentColor" viewBox="0 0 20 20"><path d="M2 6a2 2 0 012-2h6a2 2 0 012 2v8a2 2 0 01-2 2H4a2 2 0 01-2-2V6zM14.553 7.106A1 1 0 0014 8v4a1 1 0 00.553.894l2 1A1 1 0 0018 13V7a1 1 0 00-1.447-.894l-2 1z"/></svg>{isRecording ? 'Recording...' : 'Hold still...'}</>}
+            {status === 'gesture' && <><span className="text-[#0052FF] mr-2 text-xl">{gestureUI?.icon}</span>{gestureUI?.label}</>}
+          </div>
+
+          {/* Progress Bar */}
+          <div className="w-full flex items-center gap-3">
+            <div className="flex-1 bg-gray-200 rounded-full h-3 overflow-hidden">
+              <div 
+                className="bg-[#0052FF] h-3 rounded-full transition-all duration-300" 
+                style={{ width: `${status === 'gesture' ? gestureProgress : (isRecording ? (5 - countdown)/5 * 100 : (isFaceGood ? 100 : 0))}%` }}
+              ></div>
+            </div>
+            <span className="text-[#0052FF] font-bold text-sm min-w-[3ch]">
+              {status === 'gesture' ? `${Math.round(gestureProgress)}%` : (isRecording ? `${Math.round(((5 - countdown)/5)*100)}%` : (isFaceGood ? '100%' : '0%'))}
+            </span>
+          </div>
+          
+          {/* Guidance Message (Optional/Debug) */}
+          {!isFaceGood && !isRecording && status !== 'gesture' && (
+            <p className="text-xs text-red-500 mt-2 font-medium">{guidanceMsg || 'Detecting face...'}</p>
+          )}
         </div>
       </div>
 
       {/* Action Button */}
-      <div className="bg-white px-6 pt-5 pb-8">
+      <div className="bg-white px-6 pt-5 pb-8 shadow-[0_-4px_20px_rgba(0,0,0,0.05)] rounded-t-3xl">
         {status === 'selfie' && (
           <button 
             onClick={captureSelfie}
             disabled={!canCapture}
-            className={`w-full py-4 rounded-2xl font-bold text-lg flex justify-center items-center transition-all ${canCapture ? 'bg-[#0052FF] text-white shadow-lg active:scale-95' : 'bg-gray-100 text-gray-400'}`}
+            className={`w-full py-4 rounded-2xl font-bold text-lg flex justify-center items-center transition-all ${canCapture ? 'bg-[#0052FF] text-white shadow-[0_8px_20px_rgba(0,82,255,0.3)] active:scale-95' : 'bg-gray-100 text-gray-400'}`}
           >
-            <svg className="w-6 h-6 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
-            {canCapture ? t.captureSelfie : (isFaceGood === false ? 'Position face in frame' : 'Detecting...')}
+            <svg className="w-6 h-6 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/><path strokeLinecap="round" strokeLinejoin="round" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+            {t.captureSelfie}
           </button>
         )}
         
@@ -578,19 +634,20 @@ export default function FaceVerificationCustomerPage() {
               recordVideo(key, next as VerificationState);
             }}
             disabled={!canCapture || isRecording}
-            className={`w-full py-4 rounded-2xl font-bold text-lg flex justify-center items-center transition-all ${canCapture && !isRecording ? 'bg-[#0052FF] text-white shadow-lg active:scale-95' : 'bg-gray-100 text-gray-400'}`}
+            className={`w-full py-4 rounded-2xl font-bold text-lg flex justify-center items-center transition-all ${canCapture && !isRecording ? 'bg-[#0052FF] text-white shadow-[0_8px_20px_rgba(0,82,255,0.3)] active:scale-95' : 'bg-gray-100 text-gray-400'}`}
           >
             <svg className="w-6 h-6 mr-2" fill="currentColor" viewBox="0 0 20 20"><path d="M2 6a2 2 0 012-2h6a2 2 0 012 2v8a2 2 0 01-2 2H4a2 2 0 01-2-2V6zM14.553 7.106A1 1 0 0014 8v4a1 1 0 00.553.894l2 1A1 1 0 0018 13V7a1 1 0 00-1.447-.894l-2 1z"/></svg>
-            {isRecording ? `Recording... ${countdown}s` : (canCapture ? `Record ${status === 'face_video_1' ? 'Video 1' : 'Video 2'} (5s)` : 'Position face in frame')}
+            Start Video
           </button>
         )}
 
         {status === 'gesture' && (
-          <div className="text-center py-3 text-gray-500 text-sm font-medium">
-            {currentGestureIndex + 1}/{GESTURES.length} · Move your face to match: <span className="font-bold text-[#0052FF]">{GESTURES[currentGestureIndex]}</span>
+          <div className="w-full py-4 rounded-2xl font-bold text-lg flex justify-center items-center bg-gray-100 text-gray-400">
+            Auto-verifying gestures...
           </div>
         )}
       </div>
     </div>
   );
 }
+
