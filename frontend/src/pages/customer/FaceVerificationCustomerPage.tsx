@@ -176,46 +176,90 @@ export default function FaceVerificationCustomerPage() {
   }, [gestureProgress]);
 
   const handleGestureComplete = useCallback(() => {
-    if (!videoRef.current) return;
+    if (!videoRef.current || isRecording) return;
     setGestureProgress(0);
-    const canvas = document.createElement('canvas');
-    canvas.width = videoRef.current.videoWidth || 640;
-    canvas.height = videoRef.current.videoHeight || 480;
-    canvas.getContext('2d')?.drawImage(videoRef.current, 0, 0);
-    canvas.toBlob(blob => {
-      if (blob) {
-        setMediaFiles(prev => ({ ...prev, [`gesture_0${currentGestureIndex + 1}`]: blob }));
-        setCurrentGestureIndex(prev => {
-          const next = prev + 1;
-          if (next >= GESTURES.length) {
-            setTimeout(() => setStatusSafe('summary'), 300);
-          }
-          return next >= GESTURES.length ? prev : next;
-        });
-      }
-    }, 'image/jpeg', 0.9);
-  }, [currentGestureIndex]);
+    recordVideo(`gesture_0${currentGestureIndex + 1}`, null, 3, () => {
+      setCurrentGestureIndex(prev => {
+        const next = prev + 1;
+        if (next >= GESTURES.length) {
+          setTimeout(() => setStatusSafe('summary'), 300);
+        }
+        return next >= GESTURES.length ? prev : next;
+      });
+    });
+  }, [currentGestureIndex, isRecording, recordVideo]);
 
-  const captureSelfie = useCallback(() => {
+  const captureSelfie = useCallback(async () => {
     if (!videoRef.current || videoRef.current.readyState < 2) return;
-    const canvas = document.createElement('canvas');
-    canvas.width = videoRef.current.videoWidth || 640;
-    canvas.height = videoRef.current.videoHeight || 480;
-    const ctx = canvas.getContext('2d');
-    if (ctx) {
-      ctx.translate(canvas.width, 0);
-      ctx.scale(-1, 1);
-      ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
+    
+    // First capture the raw selfie from camera
+    const faceCanvas = document.createElement('canvas');
+    faceCanvas.width = videoRef.current.videoWidth || 640;
+    faceCanvas.height = videoRef.current.videoHeight || 480;
+    const faceCtx = faceCanvas.getContext('2d');
+    if (!faceCtx) return;
+    faceCtx.translate(faceCanvas.width, 0);
+    faceCtx.scale(-1, 1);
+    faceCtx.drawImage(videoRef.current, 0, 0, faceCanvas.width, faceCanvas.height);
+    
+    // Crop the face out of the selfie (assume face is in the center dashed circle)
+    // The dashed circle in UI is width 60%, height 75%.
+    const cropX = faceCanvas.width * 0.2;
+    const cropY = faceCanvas.height * 0.125;
+    const cropW = faceCanvas.width * 0.6;
+    const cropH = faceCanvas.height * 0.75;
+    
+    const croppedFaceCanvas = document.createElement('canvas');
+    croppedFaceCanvas.width = cropW;
+    croppedFaceCanvas.height = cropH;
+    croppedFaceCanvas.getContext('2d')?.drawImage(
+      faceCanvas, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH
+    );
+
+    let finalCanvas = faceCanvas;
+
+    // Load passport image and composite if available
+    if (mediaFiles.passport) {
+      try {
+        const passportImg = new Image();
+        passportImg.src = URL.createObjectURL(mediaFiles.passport as File | Blob);
+        await new Promise((resolve, reject) => {
+          passportImg.onload = resolve;
+          passportImg.onerror = reject;
+        });
+
+        const compCanvas = document.createElement('canvas');
+        compCanvas.width = passportImg.width;
+        compCanvas.height = passportImg.height;
+        const compCtx = compCanvas.getContext('2d');
+        if (compCtx) {
+          // Draw passport
+          compCtx.drawImage(passportImg, 0, 0);
+          
+          // Draw cropped face over passport photo area
+          // Photo area is typically around x: 8%, y: 20%, w: 28%, h: 48% (Angolan passport layout)
+          const px = passportImg.width * 0.08;
+          const py = passportImg.height * 0.20;
+          const pw = passportImg.width * 0.28;
+          const ph = passportImg.height * 0.48;
+          
+          compCtx.drawImage(croppedFaceCanvas, px, py, pw, ph);
+          finalCanvas = compCanvas;
+        }
+      } catch (e) {
+        console.error('Failed to composite passport', e);
+      }
     }
-    const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
+    
+    const dataUrl = finalCanvas.toDataURL('image/jpeg', 0.9);
     setSelfiePreviewUrl(dataUrl);
-    canvas.toBlob(blob => {
+    finalCanvas.toBlob(blob => {
       if (blob) setMediaFiles(prev => ({ ...prev, selfie: blob }));
     }, 'image/jpeg', 0.9);
     setStatusSafe('selfie_review');
-  }, []);
+  }, [mediaFiles.passport]);
 
-  const recordVideo = useCallback((key: string, nextStatus: VerificationState) => {
+  const recordVideo = useCallback((key: string, nextStatus: VerificationState | null, duration: number = 5, onComplete?: () => void) => {
     if (!streamRef.current || isRecording) return;
     chunksRef.current = [];
     
@@ -238,14 +282,15 @@ export default function FaceVerificationCustomerPage() {
         setMediaFiles(prev => ({ ...prev, [key]: blob }));
         setIsRecording(false);
         setCountdown(0);
-        setStatusSafe(nextStatus);
+        if (nextStatus) setStatusSafe(nextStatus);
+        if (onComplete) onComplete();
       };
 
       mr.start(500);
       setIsRecording(true);
       
       // Countdown timer
-      let secs = 5;
+      let secs = duration;
       setCountdown(secs);
       const interval = setInterval(() => {
         secs--;
@@ -263,22 +308,23 @@ export default function FaceVerificationCustomerPage() {
             // MediaRecorder never started properly - use snapshot fallback
             setIsRecording(false);
             setCountdown(0);
-            captureSnapshotFallback(key, nextStatus);
+            captureSnapshotFallback(key, nextStatus, onComplete);
           }
         } catch (err) {
           setIsRecording(false);
           setCountdown(0);
-          captureSnapshotFallback(key, nextStatus);
+          captureSnapshotFallback(key, nextStatus, onComplete);
         }
-      }, 5000);
+      }, duration * 1000);
       
     } catch (e) {
-      captureSnapshotFallback(key, nextStatus);
+      captureSnapshotFallback(key, nextStatus, onComplete);
     }
   }, [isRecording]);
 
-  const captureSnapshotFallback = (key: string, nextStatus: VerificationState) => {
-    if (!videoRef.current) { setStatusSafe(nextStatus); return; }
+  const captureSnapshotFallback = (key: string, nextStatus: VerificationState | null, onComplete?: () => void) => {
+    if (!videoRef.current) { if (nextStatus) setStatusSafe(nextStatus);
+        if (onComplete) onComplete(); return; }
     const canvas = document.createElement('canvas');
     canvas.width = videoRef.current.videoWidth || 640;
     canvas.height = videoRef.current.videoHeight || 480;
@@ -287,7 +333,8 @@ export default function FaceVerificationCustomerPage() {
       if (blob) setMediaFiles(prev => ({ ...prev, [key]: blob }));
       setIsRecording(false);
       setCountdown(0);
-      setStatusSafe(nextStatus);
+      if (nextStatus) setStatusSafe(nextStatus);
+        if (onComplete) onComplete();
     }, 'image/jpeg', 0.9);
   };
 
@@ -590,7 +637,13 @@ export default function FaceVerificationCustomerPage() {
           <div className="flex items-center text-[#0E1B31] font-bold text-lg mb-3">
             {status === 'selfie' && <><svg className="w-6 h-6 mr-2 text-[#0052FF]" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd"/></svg>Hold still...</>}
             {isVideoStep && <><svg className="w-6 h-6 mr-2 text-[#0052FF]" fill="currentColor" viewBox="0 0 20 20"><path d="M2 6a2 2 0 012-2h6a2 2 0 012 2v8a2 2 0 01-2 2H4a2 2 0 01-2-2V6zM14.553 7.106A1 1 0 0014 8v4a1 1 0 00.553.894l2 1A1 1 0 0018 13V7a1 1 0 00-1.447-.894l-2 1z"/></svg>{isRecording ? 'Recording...' : 'Hold still...'}</>}
-            {status === 'gesture' && <><span className="text-[#0052FF] mr-2 text-xl">{gestureUI?.icon}</span>{gestureUI?.label}</>}
+            {status === 'gesture' && (
+              isRecording ? (
+                <><svg className="w-6 h-6 mr-2 text-red-500 animate-pulse" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8 7a1 1 0 00-1 1v4a1 1 0 002 0V8a1 1 0 00-1-1zm4 0a1 1 0 00-1 1v4a1 1 0 002 0V8a1 1 0 00-1-1z" clipRule="evenodd"/></svg>Recording...</>
+              ) : (
+                <><span className="text-[#0052FF] mr-2 text-xl">{gestureUI?.icon}</span>{gestureUI?.label}</>
+              )
+            )}
           </div>
 
           {/* Progress Bar */}
@@ -598,11 +651,11 @@ export default function FaceVerificationCustomerPage() {
             <div className="flex-1 bg-gray-200 rounded-full h-3 overflow-hidden">
               <div 
                 className="bg-[#0052FF] h-3 rounded-full transition-all duration-300" 
-                style={{ width: `${status === 'gesture' ? gestureProgress : (isRecording ? (5 - countdown)/5 * 100 : (isFaceGood ? 100 : 0))}%` }}
+                style={{ width: `${status === 'gesture' ? (isRecording ? ((3 - countdown) / 3) * 100 : gestureProgress) : (isRecording ? ((5 - countdown) / 5) * 100 : (isFaceGood ? 100 : 0))}%` }}
               ></div>
             </div>
             <span className="text-[#0052FF] font-bold text-sm min-w-[3ch]">
-              {status === 'gesture' ? `${Math.round(gestureProgress)}%` : (isRecording ? `${Math.round(((5 - countdown)/5)*100)}%` : (isFaceGood ? '100%' : '0%'))}
+              {status === 'gesture' ? (isRecording ? `${Math.round(((3 - countdown) / 3) * 100)}%` : `${Math.round(gestureProgress)}%`) : (isRecording ? `${Math.round(((5 - countdown) / 5) * 100)}%` : (isFaceGood ? '100%' : '0%'))}
             </span>
           </div>
           
