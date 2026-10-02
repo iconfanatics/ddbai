@@ -352,6 +352,40 @@ export class ApplicationsService {
     return { success: true };
   }
 
+  async retryVerification(id: string) {
+    // 1. Delete old verification sessions to completely remove old passport/selfie/video data
+    await this.prisma.verificationSession.deleteMany({
+      where: { applicationId: id }
+    });
+
+    // 2. Create a new session
+    const session = await this.prisma.verificationSession.create({
+      data: {
+        applicationId: id,
+        status: 'PENDING',
+        expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000), // 24 hours
+      }
+    });
+
+    const url = `/verify/${session.id}`;
+    
+    await this.prisma.verificationSession.update({
+      where: { id: session.id },
+      data: { verificationUrl: url }
+    });
+
+    // 3. Reset application face verification status to PENDING and main status to PROCESSING
+    await this.prisma.application.update({
+      where: { id },
+      data: { 
+        faceVerificationStatus: 'PENDING',
+        status: 'PROCESSING'
+      }
+    });
+
+    return { url, session };
+  }
+
   async generateVerificationLink(id: string) {
     const session = await this.prisma.verificationSession.create({
       data: {

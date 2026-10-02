@@ -304,6 +304,20 @@ export default function Clients() {
     }
   };
 
+  const handleRetryVerify = async (id: string) => {
+    if (!window.confirm("Are you sure you want to retry? This will delete previous verification data and reset status.")) return;
+    try {
+      const token = localStorage.getItem('token');
+      await fetch(`/api/applications/${id}/retry-verification`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      await fetchClients();
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
   const saveNote = async (id: string) => {
     if (editingNoteId !== id) return;
     try {
@@ -587,7 +601,7 @@ export default function Clients() {
                           <div className="flex items-center justify-between mt-1">
                             <span className="text-green-600 text-[10px] font-semibold flex items-center"><svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"/></svg>Verify Link Available</span>
                             <button onClick={() => simulateVerify(vSession.id)} className="text-green-600 hover:text-green-800 text-[10px] font-medium underline mr-2">Simulate Verify</button>
-                            <button onClick={() => handleGenerateLink(app.id)} className="text-blue-500 hover:text-blue-700 text-[10px] font-medium underline">Regenerate</button>
+                            <button onClick={() => handleRetryVerify(app.id)} className="text-red-500 hover:text-red-700 text-[10px] font-medium underline">Retry Verify</button>
                           </div>
                         </div>
                       )

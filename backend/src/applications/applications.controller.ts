@@ -91,6 +91,11 @@ export class ApplicationsController {
     return this.applicationsService.runApplication(id);
   }
 
+  @Post(':id/retry-verification')
+  retryVerification(@Param('id') id: string) {
+    return this.applicationsService.retryVerification(id);
+  }
+
   @Post(':id/generate-verification-link')
   generateVerificationLink(@Param('id') id: string) {
     return this.applicationsService.generateVerificationLink(id);
