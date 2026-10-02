@@ -49,6 +49,13 @@ export default function FaceVerificationCustomerPage() {
   const [currentGestureIndex, setCurrentGestureIndex] = useState(0);
   const [selfiePreviewUrl, setSelfiePreviewUrl] = useState('');
   const [gestureProgress, setGestureProgress] = useState(0);
+  type GesturePhase = 'init' | 'ready' | 'recording' | 'hold';
+  const [gesturePhase, setGesturePhase] = useState<GesturePhase>('init');
+  const gesturePhaseRef = useRef<GesturePhase>('init');
+  const setGesturePhaseSafe = useCallback((phase: GesturePhase) => {
+    gesturePhaseRef.current = phase;
+    setGesturePhase(phase);
+  }, []);
 
   // Keep statusRef in sync
   const setStatusSafe = useCallback((s: VerificationState) => {
@@ -145,12 +152,23 @@ export default function FaceVerificationCustomerPage() {
               const pose = detectHeadPose(detection.landmarks);
               const expectedGesture = GESTURES[currentGestureIndex];
               const isCorrect = checkGesture(expectedGesture, pose);
-              setGestureProgress(prev => {
-                const next = isCorrect ? Math.min(prev + 8, 100) : Math.max(prev - 15, 0);
-                return next;
-              });
+              const isCenter = pose.yaw === 'center' && pose.pitch === 'center';
+              const phase = gesturePhaseRef.current;
+              
+              if (phase === 'init') {
+                if (isCenter) setGesturePhaseSafe('ready');
+              } else if (phase === 'ready') {
+                if (!isCenter) setGesturePhaseSafe('recording');
+              } else if (phase === 'recording') {
+                setGestureProgress(prev => {
+                  const next = isCorrect ? Math.min(prev + 8, 100) : Math.max(prev - 15, 0);
+                  return next;
+                });
+              }
             } else {
-              setGestureProgress(prev => Math.max(prev - 15, 0));
+              if (gesturePhaseRef.current === 'recording') {
+                setGestureProgress(prev => Math.max(prev - 15, 0));
+              }
             }
           } catch (e) {
             // ignore
@@ -262,20 +280,14 @@ export default function FaceVerificationCustomerPage() {
 
   const handleGestureComplete = useCallback(() => {
     if (!videoRef.current) return;
-    setGestureProgress(0);
     stopRecording();
   }, [stopRecording]);
 
-  // Gesture completion check
   useEffect(() => {
-    if (gestureProgress >= 100 && status === 'gesture') {
-      handleGestureComplete();
-    }
-  }, [gestureProgress, status, handleGestureComplete]);
-
-  useEffect(() => {
-    if (status === 'gesture' && !isRecording && currentGestureIndex < GESTURES.length) {
+    if (status === 'gesture' && gesturePhase === 'recording' && !isRecording) {
       recordVideo(`gesture_0${currentGestureIndex + 1}`, null, 0, () => {
+        setGestureProgress(0);
+        setGesturePhaseSafe('init');
         setCurrentGestureIndex(prev => {
           const next = prev + 1;
           if (next >= GESTURES.length) {
@@ -285,7 +297,22 @@ export default function FaceVerificationCustomerPage() {
         });
       });
     }
-  }, [status, currentGestureIndex, isRecording, recordVideo]);
+  }, [status, gesturePhase, isRecording, currentGestureIndex, recordVideo, setGesturePhaseSafe]);
+
+  useEffect(() => {
+    if (status === 'gesture' && gesturePhase === 'recording' && gestureProgress >= 100) {
+      setGesturePhaseSafe('hold');
+    }
+  }, [gestureProgress, gesturePhase, status, setGesturePhaseSafe]);
+
+  useEffect(() => {
+    if (gesturePhase === 'hold') {
+      const timer = setTimeout(() => {
+        handleGestureComplete();
+      }, 400); // Hold for 400ms
+      return () => clearTimeout(timer);
+    }
+  }, [gesturePhase, handleGestureComplete]);
 
   const captureSelfie = useCallback(async () => {
     if (!videoRef.current || videoRef.current.readyState < 2) return;
@@ -605,11 +632,6 @@ export default function FaceVerificationCustomerPage() {
       <div className="text-center px-6 pt-6 pb-4 bg-white z-10 rounded-b-3xl shadow-sm">
         <img src="/logo.png" alt="Visaora" className="h-8 mx-auto mb-4" onError={(e)=>e.currentTarget.style.display='none'}/>
         <div className="flex items-center justify-between">
-          {status === 'gesture' && (
-            <div className="w-8 h-8 rounded-full bg-[#0E1B31] text-white font-bold flex items-center justify-center text-sm shadow">
-              {currentGestureIndex + 1}
-            </div>
-          )}
           <div className="flex-1">
             <h2 className="text-[#0E1B31] font-extrabold text-2xl">
               {status === 'selfie' && 'Look at the Camera'}
@@ -617,12 +639,45 @@ export default function FaceVerificationCustomerPage() {
               {status === 'face_video_2' && 'Video 2'}
             </h2>
           </div>
-          {status === 'gesture' && <div className="w-8" />}
         </div>
       </div>
 
       {/* Video Viewfinder Container */}
       <div className="flex-1 flex flex-col items-center justify-center px-6 py-4">
+        
+        {/* Large Instruction for Gestures */}
+        {status === 'gesture' && gestureUI && (
+          <div className="mb-6 text-center w-full flex flex-col items-center">
+            <h1 className="text-4xl font-black text-[#0052FF] uppercase tracking-wider mb-3">
+              {gestureUI.label}
+            </h1>
+            
+            <div className="flex items-center justify-center h-8">
+              {gesturePhase === 'init' && (
+                <span className="bg-gray-100 text-gray-800 text-sm font-bold px-4 py-1.5 rounded-full border border-gray-200">
+                  CENTER YOUR FACE
+                </span>
+              )}
+              {gesturePhase === 'ready' && (
+                <span className="bg-yellow-100 text-yellow-800 text-sm font-bold px-4 py-1.5 rounded-full border border-yellow-200">
+                  READY... MOVE NOW!
+                </span>
+              )}
+              {gesturePhase === 'recording' && (
+                <span className="bg-red-100 text-red-700 text-sm font-bold px-4 py-1.5 rounded-full border border-red-200 flex items-center shadow-sm">
+                  <div className="w-2.5 h-2.5 bg-red-600 rounded-full animate-pulse mr-2"></div>
+                  RECORDING
+                </span>
+              )}
+              {gesturePhase === 'hold' && (
+                <span className="bg-green-100 text-green-800 text-sm font-bold px-4 py-1.5 rounded-full border border-green-200 flex items-center">
+                  <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7"/></svg>
+                  HOLD
+                </span>
+              )}
+            </div>
+          </div>
+        )}
         <div className="relative w-full max-w-[320px] aspect-square">
           {/* Main Circle Camera */}
           <div className={`absolute inset-0 rounded-full overflow-hidden border-4 transition-colors duration-300 ${isRecording || gestureProgress > 0 ? 'border-green-400 shadow-[0_0_20px_rgba(74,222,128,0.5)]' : 'border-[#0E1B31]'}`}>
@@ -676,11 +731,10 @@ export default function FaceVerificationCustomerPage() {
             {status === 'selfie' && <><svg className="w-6 h-6 mr-2 text-[#0052FF]" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd"/></svg>Hold still...</>}
             {isVideoStep && <><svg className="w-6 h-6 mr-2 text-[#0052FF]" fill="currentColor" viewBox="0 0 20 20"><path d="M2 6a2 2 0 012-2h6a2 2 0 012 2v8a2 2 0 01-2 2H4a2 2 0 01-2-2V6zM14.553 7.106A1 1 0 0014 8v4a1 1 0 00.553.894l2 1A1 1 0 0018 13V7a1 1 0 00-1.447-.894l-2 1z"/></svg>{isRecording ? 'Recording...' : 'Hold still...'}</>}
             {status === 'gesture' && (
-              isRecording ? (
-                <><svg className="w-6 h-6 mr-2 text-red-500 animate-pulse" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8 7a1 1 0 00-1 1v4a1 1 0 002 0V8a1 1 0 00-1-1zm4 0a1 1 0 00-1 1v4a1 1 0 002 0V8a1 1 0 00-1-1z" clipRule="evenodd"/></svg>Recording...</>
-              ) : (
-                <><span className="text-[#0052FF] mr-2 text-xl">{gestureUI?.icon}</span>{gestureUI?.label}</>
-              )
+              <div className="flex items-center">
+                <span className="text-gray-500 text-sm mr-2 font-normal">Step {currentGestureIndex + 1} of {GESTURES.length}</span>
+                <span className="text-[#0E1B31] font-extrabold">{gestureUI?.label}</span>
+              </div>
             )}
           </div>
 
@@ -689,11 +743,11 @@ export default function FaceVerificationCustomerPage() {
             <div className="flex-1 bg-gray-200 rounded-full h-3 overflow-hidden">
               <div 
                 className="bg-[#0052FF] h-3 rounded-full transition-all duration-300" 
-                style={{ width: `${status === 'gesture' ? (isRecording ? ((3 - countdown) / 3) * 100 : gestureProgress) : (isRecording ? ((5 - countdown) / 5) * 100 : (isFaceGood ? 100 : 0))}%` }}
+                style={{ width: `${status === 'gesture' ? gestureProgress : (isRecording ? ((5 - countdown) / 5) * 100 : (isFaceGood ? 100 : 0))}%` }}
               ></div>
             </div>
             <span className="text-[#0052FF] font-bold text-sm min-w-[3ch]">
-              {status === 'gesture' ? (isRecording ? `${Math.round(((3 - countdown) / 3) * 100)}%` : `${Math.round(gestureProgress)}%`) : (isRecording ? `${Math.round(((5 - countdown) / 5) * 100)}%` : (isFaceGood ? '100%' : '0%'))}
+              {status === 'gesture' ? `${Math.round(gestureProgress)}%` : (isRecording ? `${Math.round(((5 - countdown) / 5) * 100)}%` : (isFaceGood ? '100%' : '0%'))}
             </span>
           </div>
           
