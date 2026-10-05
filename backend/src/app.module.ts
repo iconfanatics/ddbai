@@ -15,9 +15,10 @@ import { FinanceModule } from './finance/finance.module.js';
 import { CommunicationsModule } from './communications/communications.module.js';
 import { ReportsModule } from './reports/reports.module.js';
 import { AdminModule } from './admin/admin.module.js';
+import { VfsAutomationModule } from './vfs-automation/vfs-automation.module.js';
 
 @Module({
-  imports: [PrismaModule, AuthModule, UsersModule, OrganizationsModule, ApplicationsModule, DocumentsModule, VerificationModule, RoutesModule, SlotsModule, BookingsModule, FinanceModule, CommunicationsModule, ReportsModule, AdminModule],
+  imports: [PrismaModule, AuthModule, UsersModule, OrganizationsModule, ApplicationsModule, DocumentsModule, VerificationModule, RoutesModule, SlotsModule, BookingsModule, FinanceModule, CommunicationsModule, ReportsModule, AdminModule, VfsAutomationModule],
   controllers: [AppController],
   providers: [AppService],
 })

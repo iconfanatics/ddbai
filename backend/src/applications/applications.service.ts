@@ -2,7 +2,7 @@
 import { Injectable, NotFoundException, ConflictException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { DocumentsService } from '../documents/documents.service.js';
-
+import { VfsAutomationService } from '../vfs-automation/vfs-automation.service.js';
 @Injectable()
 export class ApplicationsService {
   async tempFixDb() {
@@ -17,7 +17,11 @@ export class ApplicationsService {
     return { res1, res2 };
   }
 
-  constructor(private prisma: PrismaService, private documentsService: DocumentsService) {}
+  constructor(
+    private prisma: PrismaService, 
+    private documentsService: DocumentsService,
+    private vfsAutomationService: VfsAutomationService
+  ) {}
 
   /** Global passport check — searches ALL CustomerProfiles across all agents.
    *  Normalizes the passport number (uppercase + trim) before comparison.
@@ -116,6 +120,9 @@ export class ApplicationsService {
             applicationCenter: data.applicationCenter || null,
             category: data.category || null,
             subCategory: data.subCategory || null,
+            proxy: data.proxy || null,
+            vfsEmail: data.vfsEmail || null,
+            vfsPassword: data.vfsPassword || null,
             faceVerificationRequired: faceVerificationRequired,
           },
         });
@@ -199,6 +206,9 @@ export class ApplicationsService {
           applicationCenter: data.applicationCenter !== undefined ? data.applicationCenter : app.applicationCenter,
           category: data.category !== undefined ? data.category : app.category,
           subCategory: data.subCategory !== undefined ? data.subCategory : app.subCategory,
+          proxy: data.proxy !== undefined ? data.proxy : app.proxy,
+          vfsEmail: data.vfsEmail !== undefined ? data.vfsEmail : app.vfsEmail,
+          vfsPassword: data.vfsPassword !== undefined ? data.vfsPassword : app.vfsPassword,
         }
       });
 
@@ -276,13 +286,44 @@ export class ApplicationsService {
       data: { status: 'RUNNING' }
     });
 
-    return this.prisma.processingRun.create({
+    const processingRun = await this.prisma.processingRun.create({
       data: {
         applicationId: id,
         sourcePage: sourcePage,
         status: 'RUNNING'
       }
     });
+
+    // Trigger Playwright Automation asynchronously
+    (async () => {
+      try {
+        let videoPath = null;
+        if (application.faceVerificationRequired && application.faceVerificationStatus === 'VERIFIED') {
+           // If you have a downloaded media path, pass it here. 
+           // For now, we assume we might need to download it or pass a dummy path until storage is fully hooked up
+           // videoPath = await this.documentsService.downloadMediaToTemp(application.id); 
+        }
+
+        const success = await this.vfsAutomationService.loginToVFS(
+          application.vfsEmail || '',
+          application.vfsPassword || '',
+          application.proxy || '',
+          videoPath,
+          // You can dynamically fetch targetUrl based on application.routeId here
+        );
+
+        if (!success) {
+           await this.prisma.application.update({
+             where: { id },
+             data: { status: 'FAILED' } // Or another error state
+           });
+        }
+      } catch (error) {
+        console.error('Background automation error:', error);
+      }
+    })();
+
+    return processingRun;
   }
 
   

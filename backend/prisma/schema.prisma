@@ -120,6 +120,9 @@ model Application {
   subCategory       String?
   assignedAgentId String?
   notes           String?
+  proxy           String?
+  vfsEmail        String?
+  vfsPassword     String?
   faceVerificationRequired Boolean @default(false)
   faceVerificationStatus   String? // PENDING, VERIFIED, FAILED
   createdAt       DateTime @default(now())
