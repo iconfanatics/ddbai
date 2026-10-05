@@ -1,8 +1,6 @@
-import { Controller, Post, Body, Get, Param, Req } from '@nestjs/common';
 import { Controller, Post, Body, Get, Param, Req, Query, Res } from '@nestjs/common';
 import { ApplicationsService } from './applications.service.js';
 import { DocumentsService } from '../documents/documents.service.js';
-import type { Request } from 'express';
 import type { Request, Response } from 'express';
 
 @Controller('public')

@@ -71,7 +71,7 @@ export class VfsAutomationService {
       // Keep browser open or perform next steps here.
       
       return true;
-    } catch (error) {
+    } catch (error: any) {
       this.logger.error(`VFS Automation failed: ${error.message}`, error.stack);
       return false;
     } finally {
