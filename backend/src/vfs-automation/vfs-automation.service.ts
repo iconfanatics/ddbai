@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { chromium, Browser } from 'playwright';
+import { Browser } from 'playwright';
 import { PrismaService } from '../prisma/prisma.service.js';
 
 @Injectable()
@@ -48,8 +48,9 @@ export class VfsAutomationService {
       if (proxyString && proxyString.trim() !== '') {
         try {
            const url = new URL(proxyString.startsWith('http') ? proxyString : `http://${proxyString}`);
+           const proxyServerStr = url.port ? `${url.protocol}//${url.hostname}:${url.port}` : `${url.protocol}//${url.hostname}`;
            proxyConfig = {
-             server: `${url.protocol}//${url.hostname}:${url.port}`,
+             server: proxyServerStr,
              username: url.username,
              password: url.password,
            };
@@ -78,8 +79,12 @@ export class VfsAutomationService {
       }
 
       // ==========================================
-      // LAUNCH BROWSER (Headless for Server)
+      // LAUNCH BROWSER (Stealth)
       // ==========================================
+      const { chromium } = require('playwright-extra');
+      const stealth = require('puppeteer-extra-plugin-stealth')();
+      chromium.use(stealth);
+
       browser = await chromium.launch({
         headless: true, // SET TO TRUE for Ubuntu VPS
         proxy: proxyConfig,
