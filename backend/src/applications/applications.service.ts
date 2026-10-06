@@ -48,7 +48,7 @@ export class ApplicationsService {
     return this.prisma.$transaction(async (tx) => {
       const familyGroupId = data.applicants.length > 1 ? crypto.randomUUID() : null;
       const results = [];
-
+      
       for (const app of data.applicants) {
         if (!app.passportNumber) continue;
         const normalized = app.passportNumber.trim().toUpperCase();
