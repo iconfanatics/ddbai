@@ -54,9 +54,13 @@ export class VfsAutomationService {
              password: url.password,
            };
            this.logger.log(`Using Proxy Server: ${proxyConfig.server}`);
+           if (applicationId) await this.updateAppStatus(applicationId, `Starting (Proxy: ${proxyConfig.server})`);
         } catch (e) {
            this.logger.warn(`Invalid proxy format. Attempting without proxy. Error: ${e}`);
+           if (applicationId) await this.updateAppStatus(applicationId, `Starting (No Proxy)`);
         }
+      } else {
+        if (applicationId) await this.updateAppStatus(applicationId, `Starting (No Proxy)`);
       }
 
       // ==========================================
