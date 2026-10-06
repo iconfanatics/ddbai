@@ -93,6 +93,7 @@ export class VfsAutomationService {
       // STEP 01 - Login Page
       // ==========================================
       this.logger.log(`[Step 01] Navigating to Login Page: ${targetUrl}`);
+      if (applicationId) await this.updateAppStatus(applicationId, 'Navigating to VFS Login...');
       await page.goto(targetUrl, { waitUntil: 'domcontentloaded' });
       
       // Wait for the page to render completely
@@ -107,6 +108,7 @@ export class VfsAutomationService {
         await page.waitForSelector(emailSelector, { timeout: 15000 });
         await page.fill(emailSelector, vfsEmail);
         this.logger.log(`[Step 01] Entered Email.`);
+        if (applicationId) await this.updateAppStatus(applicationId, 'Entering credentials...');
         
         await page.fill(passwordSelector, vfsPassword);
         this.logger.log(`[Step 01] Entered Password.`);
@@ -124,11 +126,13 @@ export class VfsAutomationService {
       // STEP 02 - Dashboard
       // ==========================================
       this.logger.log(`[Step 02] Waiting for Dashboard...`);
+      if (applicationId) await this.updateAppStatus(applicationId, 'Solving Captcha / Waiting for Dashboard...');
       const newBookingBtn = 'button:has-text("Start New Booking")';
       try {
         await page.waitForSelector(newBookingBtn, { timeout: 45000 });
         await page.click(newBookingBtn);
         this.logger.log(`[Step 02] Clicked "Start New Booking"`);
+        if (applicationId) await this.updateAppStatus(applicationId, 'Logged In Successfully!');
       } catch (err) {
         this.logger.warn(`[Step 02] Could not find "Start New Booking". Stuck on Cloudflare or Loading?`);
       }
@@ -178,17 +182,20 @@ export class VfsAutomationService {
       // Keeping browser open for local review
       // ------------------------------------------
       this.logger.log(`[TESTING] Keeping browser open for 5 minutes so you can inspect the flow...`);
+      if (applicationId) await this.updateAppStatus(applicationId, 'Waiting (Inspect Browser)...');
       await page.waitForTimeout(300000); 
       
       return true;
     } catch (error: any) {
       this.logger.error(`VFS Automation failed: ${error.message}`, error.stack);
+      if (applicationId) await this.updateAppStatus(applicationId, 'Failed / Blocked by Captcha');
       return false;
     } finally {
       if (browser) {
         // We will keep this commented out or managed via environment variable later so the browser doesn't close instantly on error
         await browser.close(); 
         this.logger.log(`Browser execution finished.`);
+        if (applicationId) await this.updateAppStatus(applicationId, 'Finished');
       }
     }
   }
