@@ -10,6 +10,7 @@ RUN yarn build
 FROM public.ecr.aws/docker/library/node:22-slim
 WORKDIR /app
 RUN apt-get update && apt-get install -y openssl
+RUN npx playwright install --with-deps chromium
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/prisma ./prisma
