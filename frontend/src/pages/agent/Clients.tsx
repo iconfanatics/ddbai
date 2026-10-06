@@ -92,7 +92,7 @@ export default function Clients() {
     setDateFrom(""); setDateTo("");
   };
 
-  const fetchClients = async () => {
+  const fetchClients = async (silent?: boolean) => {
     try {
       const token = localStorage.getItem('token');
       const res = await fetch('/api/applications', { headers: { Authorization: `Bearer ${token}` } });
