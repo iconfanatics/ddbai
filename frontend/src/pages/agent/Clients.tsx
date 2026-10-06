@@ -574,7 +574,7 @@ export default function Clients() {
                       {requiresFaceVerification && (!vSession || vSession.status === 'PENDING') ? (
                         <span className="px-2 py-1 bg-yellow-100 text-yellow-800 text-[10px] font-semibold rounded whitespace-nowrap">Face Verification Pending</span>
                       ) : (
-                        <span className="px-2 py-1 bg-blue-100 text-blue-800 text-[10px] font-semibold rounded">Processing</span>
+                        <span className="px-2 py-1 bg-blue-100 text-blue-800 text-[10px] font-semibold rounded">{app.status && app.status !== 'DRAFT' ? app.status : 'Processing'}</span>
                       )}
                     </div>
                   </td>
@@ -658,7 +658,7 @@ export default function Clients() {
                             if (!confirm('Run VFS Automation (Step 1-2) for this client?')) return;
                             try {
                               const token = localStorage.getItem('token');
-                              alert('VFS Automation initiated. Check backend logs for progress.');
+                              
                               await fetch(`/api/applications/${app.id}/vfs-automate`, {
                                 method: 'POST',
                                 headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }
