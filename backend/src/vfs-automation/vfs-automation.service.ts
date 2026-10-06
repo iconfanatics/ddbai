@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Browser } from 'playwright';
+
 import { PrismaService } from '../prisma/prisma.service.js';
 
 @Injectable()
@@ -81,8 +82,11 @@ export class VfsAutomationService {
       // ==========================================
       // LAUNCH BROWSER (Stealth)
       // ==========================================
-      const { chromium } = require('playwright-extra');
-      const stealth = require('puppeteer-extra-plugin-stealth')();
+      // @ts-ignore
+      const { chromium } = await import('playwright-extra');
+      // @ts-ignore
+      const { default: stealthPlugin } = await import('puppeteer-extra-plugin-stealth');
+      const stealth = stealthPlugin();
       chromium.use(stealth);
 
       browser = await chromium.launch({
