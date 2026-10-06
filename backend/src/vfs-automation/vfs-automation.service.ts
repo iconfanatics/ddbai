@@ -107,6 +107,12 @@ export class VfsAutomationService {
       await page.screenshot({ path: '/app/debug-login.png' });
       this.logger.log(`[Step 01] Screenshot saved to /app/debug-login.png`);
 
+      const pageTitle = await page.title();
+      this.logger.log(`[Step 01] PAGE TITLE IS: "${pageTitle}"`);
+      
+      const pageText = await page.evaluate(() => document.body.innerText.substring(0, 300));
+      this.logger.log(`[Step 01] PAGE CONTENT PREVIEW: ${pageText.replace(/\n/g, ' ')}`);
+
       // Trying standard VFS login selectors
       const emailSelector = 'input[formcontrolname="username"], input[name="Email"], input[type="text"]'; 
       const passwordSelector = 'input[formcontrolname="password"], input[name="Password"], input[type="password"]';
