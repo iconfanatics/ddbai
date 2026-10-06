@@ -4,9 +4,9 @@ services:
   db:
     image: public.ecr.aws/docker/library/postgres:15-alpine
     environment:
-      POSTGRES_USER: ${DB_USER:-visasync}
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-visasync_password}
-      POSTGRES_DB: ${DB_NAME:-visasync_db}
+      POSTGRES_USER: visasync
+      POSTGRES_PASSWORD: visasync_password
+      POSTGRES_DB: visasync_db
     volumes:
       - pgdata:/var/lib/postgresql/data
     restart: always
@@ -37,7 +37,7 @@ services:
     build:
       context: ./backend
     environment:
-      DATABASE_URL: postgresql://${DB_USER:-visasync}:${DB_PASSWORD:-visasync_password}@db:5432/${DB_NAME:-visasync_db}?schema=public
+      DATABASE_URL: postgresql://visasync:visasync_password@db:5432/visasync_db?schema=public
       JWT_SECRET: ${JWT_SECRET:-supersecret_prod_key}
       MINIO_ENDPOINT: minio
       MINIO_PORT: 9000
@@ -59,7 +59,7 @@ services:
     build:
       context: ./backend
     environment:
-      DATABASE_URL: postgresql://${DB_USER:-visasync}:${DB_PASSWORD:-visasync_password}@db:5432/${DB_NAME:-visasync_db}?schema=public
+      DATABASE_URL: postgresql://visasync:visasync_password@db:5432/visasync_db?schema=public
       NODE_ENV: production
     depends_on:
       - db
