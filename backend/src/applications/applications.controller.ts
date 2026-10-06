@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Param, Patch, Query, ConflictException, BadRequestException, UseGuards, Res } from '@nestjs/common';
+import { Controller, NotFoundException, Get, Post, Body, Param, Patch, Query, ConflictException, BadRequestException, UseGuards, Res } from '@nestjs/common';
 import type { Response } from 'express';
 import { ApplicationsService } from './applications.service.js';
 import { VfsAutomationService } from '../vfs-automation/vfs-automation.service.js';
@@ -9,7 +9,7 @@ import { AuthGuard } from '@nestjs/passport';
 export class ApplicationsController {
   @Post(':id/vfs-automate')
   async runVfsAutomation(@Param('id') id: string) {
-    const app = await this.applicationsService.getApplicationById(id);
+    const app = await this.applicationsService.findOne(id);
     if (!app) throw new NotFoundException('Application not found');
     
     // Fire and forget
