@@ -151,16 +151,20 @@ export class VfsAutomationService {
         
         await page.fill(passwordSelector, vfsPassword);
         this.logger.log(`[Step 01] Entered Password.`);
-
-        // Note: If Cloudflare Captcha appears here, manual interaction or a 3rd party solver is needed.
-        // For now, we click login and assume it passes or waits for the user locally.
         
         await page.click(loginBtnSelector);
         this.logger.log(`[Step 01] Clicked Login Button.`);
       } catch (err) {
-        this.logger.warn(`[Step 01] Could not find login fields automatically. Manual intervention might be needed.`);
+        this.logger.warn(`[Step 01] Could not find login fields automatically. Check if Turnstile is active.`);
+        const hasTurnstile = await page.$('iframe[src*="cloudflare"]');
+        if (hasTurnstile) {
+           this.logger.warn(`[Step 01] CLOUDFLARE TURNSTILE DETECTED! We need a captcha solver.`);
+           if (applicationId) await this.updateAppStatus(applicationId, 'Blocked by Cloudflare Turnstile');
+        }
         const pageHtml = await page.evaluate(() => document.body.innerHTML);
-        this.logger.log(`[DEBUG] Page HTML snippet: ${pageHtml.substring(0, 800)}...`);
+        this.logger.log(`[DEBUG] Page HTML snippet: ${pageHtml.substring(0, 3000)}...`);
+        await page.screenshot({ path: '/app/debug-login-failed.png' });
+        this.logger.log(`[DEBUG] Failed screenshot saved to /app/debug-login-failed.png`);
       }
 
       // ==========================================
