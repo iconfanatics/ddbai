@@ -137,8 +137,9 @@ export class VfsAutomationService {
       }
 
       // Trying standard VFS login selectors
-      const emailSelector = 'input[type="text"], input[formcontrolname="username"], input[name="Email"], input[name="email"], input[id^="mat-input-"]'; 
-      const passwordSelector = 'input[type="password"], input[formcontrolname="password"], input[name="Password"], input[name="password"]';
+      // Avoiding .d-none because VFS puts a hidden honeypot input field before the real one
+      const emailSelector = 'input[formcontrolname="username"]:not(.d-none), input#email, input[id^="mat-input-"]:not(.d-none)'; 
+      const passwordSelector = 'input[formcontrolname="password"]:not(.d-none), input#password';
       const loginBtnSelector = 'button:has-text("Sign in"), button:has-text("Login"), button.mat-focus-indicator';
 
       try {
