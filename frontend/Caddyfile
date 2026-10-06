@@ -4,7 +4,7 @@ visaoraworld.com, www.visaoraworld.com {
 
     handle /api/* {
         uri strip_prefix /api
-        reverse_proxy 172.17.0.1:3001
+        reverse_proxy backend-api:3001
     }
 
     handle /minio-api/* {
@@ -25,7 +25,7 @@ visaoraworld.com, www.visaoraworld.com {
 
     handle /api/* {
         uri strip_prefix /api
-        reverse_proxy 172.17.0.1:3001
+        reverse_proxy backend-api:3001
     }
 
     handle /minio-api/* {
