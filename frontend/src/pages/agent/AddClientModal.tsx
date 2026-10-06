@@ -183,6 +183,9 @@ export function AddClientModal({ onClose, onSuccess, prefilledFromCountry, prefi
   const [applicationCenter, setApplicationCenter] = useState('');
   const [category, setCategory] = useState('');
   const [subCategory, setSubCategory] = useState('');
+  const [proxy, setProxy] = useState('');
+  const [vfsEmail, setVfsEmail] = useState('');
+  const [vfsPassword, setVfsPassword] = useState('');
   const [applicants, setApplicants] = useState<Applicant[]>([]);
   const [focusedAppId, setFocusedAppId] = useState<string | null>(null);
 
@@ -340,6 +343,9 @@ export function AddClientModal({ onClose, onSuccess, prefilledFromCountry, prefi
           applicationCenter,
           category,
           subCategory,
+          proxy: proxy || undefined,
+          vfsEmail: vfsEmail || undefined,
+          vfsPassword: vfsPassword || undefined,
           applicants: applicants.map(a => ({
             firstName: a.firstName,
             lastName: a.lastName,
@@ -529,6 +535,21 @@ export function AddClientModal({ onClose, onSuccess, prefilledFromCountry, prefi
                     <option value="">Select sub-category</option>
                     {validSubCategories.map(o => <option key={o} value={o}>{o}</option>)}
                   </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">Proxy String (Optional)</label>
+                  <input type="text" className="w-full border border-gray-300 rounded p-2 text-sm bg-white" placeholder="ip:port or user:pass@ip:port" value={proxy} onChange={e => setProxy(e.target.value)} />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">VFS Email (Optional)</label>
+                  <input type="email" className="w-full border border-gray-300 rounded p-2 text-sm bg-white" placeholder="Email" value={vfsEmail} onChange={e => setVfsEmail(e.target.value)} />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">VFS Password (Optional)</label>
+                  <input type="password" className="w-full border border-gray-300 rounded p-2 text-sm bg-white" placeholder="Password" value={vfsPassword} onChange={e => setVfsPassword(e.target.value)} />
                 </div>
               </div>
 
@@ -748,6 +769,7 @@ export function AddClientModal({ onClose, onSuccess, prefilledFromCountry, prefi
               <div className="flex"><span className="text-gray-500 w-32">Application Center</span><span className="font-medium">{applicationCenter}</span></div>
               <div className="flex"><span className="text-gray-500 w-32">Category</span><span className="font-medium">{category}</span></div>
               <div className="flex"><span className="text-gray-500 w-32">Sub-Category</span><span className="font-medium">{subCategory}</span></div>
+              <div className="flex"><span className="text-gray-500 w-32">Proxy</span><span className="font-medium">{proxy || 'None'}</span></div>
               <div className="flex"><span className="text-gray-500 w-32">Total Applicant(s)</span><span className="font-medium">{applicants.length} Applicant(s)</span></div>
             </div>
           </div>

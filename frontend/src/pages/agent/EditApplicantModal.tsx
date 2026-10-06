@@ -20,6 +20,10 @@ export function EditApplicantModal({ client, onClose, onSave }: { client: any, o
   const [postalCode, setPostalCode] = useState(client.customer?.postalCode || '');
   const [city, setCity] = useState(client.customer?.city || '');
 
+  const [proxy, setProxy] = useState(client.proxy || '');
+  const [vfsEmail, setVfsEmail] = useState(client.vfsEmail || '');
+  const [vfsPassword, setVfsPassword] = useState(client.vfsPassword || '');
+
   const [saving, setSaving] = useState(false);
 
   const handleSubmit = async () => {
@@ -32,7 +36,8 @@ export function EditApplicantModal({ client, onClose, onSave }: { client: any, o
         body: JSON.stringify({
           firstName, lastName, nationality, passportNumber, gender, dateOfBirth,
           passportExpiry, gapDays: gapDays ? parseInt(gapDays as string, 10) : null,
-          addressLine1, addressLine2, state, postalCode, city
+          addressLine1, addressLine2, state, postalCode, city,
+          proxy, vfsEmail, vfsPassword
         })
       });
       onSave();
@@ -120,6 +125,24 @@ export function EditApplicantModal({ client, onClose, onSave }: { client: any, o
             <div>
               <label className="block text-xs font-medium text-gray-700 mb-1">Postal Code</label>
               <input type="text" className="w-full border-gray-300 rounded p-2 text-sm border" value={postalCode} onChange={e => setPostalCode(e.target.value)} />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-3 gap-4 border-t border-gray-100 pt-4">
+            <div className="col-span-3">
+              <h3 className="text-sm font-semibold text-gray-800">Application Level Settings (VFS Automation)</h3>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">Proxy String</label>
+              <input type="text" className="w-full border-gray-300 rounded p-2 text-sm border" value={proxy} onChange={e => setProxy(e.target.value)} placeholder="ip:port or user:pass@ip:port" />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">VFS Email</label>
+              <input type="email" className="w-full border-gray-300 rounded p-2 text-sm border" value={vfsEmail} onChange={e => setVfsEmail(e.target.value)} placeholder="Email" />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">VFS Password</label>
+              <input type="password" className="w-full border-gray-300 rounded p-2 text-sm border" value={vfsPassword} onChange={e => setVfsPassword(e.target.value)} placeholder="Password" />
             </div>
           </div>
         </div>
