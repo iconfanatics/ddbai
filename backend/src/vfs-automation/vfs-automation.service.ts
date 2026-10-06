@@ -124,12 +124,26 @@ export class VfsAutomationService {
       const pageText = await page.evaluate(() => document.body.innerText.substring(0, 300));
       this.logger.log(`[Step 01] PAGE CONTENT PREVIEW: ${pageText.replace(/\n/g, ' ')}`);
 
+      // 1. Accept Cookies
+      try {
+        const btn = await page.waitForSelector('button:has-text("Accept All Cookies"), button#onetrust-accept-btn-handler', { timeout: 5000 });
+        if (btn) {
+          await btn.click();
+          this.logger.log(`[Step 01] Clicked "Accept All Cookies"`);
+          await page.waitForTimeout(1000); // Wait for modal to close
+        }
+      } catch (err) {
+        this.logger.log(`[Step 01] No Cookie popup found or already accepted.`);
+      }
+
       // Trying standard VFS login selectors
-      const emailSelector = 'input[formcontrolname="username"], input[name="Email"], input[type="text"]'; 
-      const passwordSelector = 'input[formcontrolname="password"], input[name="Password"], input[type="password"]';
-      const loginBtnSelector = 'button:has-text("Sign in"), button:has-text("Login")';
+      const emailSelector = 'input[type="text"], input[formcontrolname="username"], input[name="Email"], input[name="email"], input[id^="mat-input-"]'; 
+      const passwordSelector = 'input[type="password"], input[formcontrolname="password"], input[name="Password"], input[name="password"]';
+      const loginBtnSelector = 'button:has-text("Sign in"), button:has-text("Login"), button.mat-focus-indicator';
 
       try {
+        // Wait for loading spinner to disappear if it exists
+        this.logger.log(`[Step 01] Waiting for form fields to render...`);
         await page.waitForSelector(emailSelector, { timeout: 15000 });
         await page.fill(emailSelector, vfsEmail);
         this.logger.log(`[Step 01] Entered Email.`);
@@ -145,6 +159,8 @@ export class VfsAutomationService {
         this.logger.log(`[Step 01] Clicked Login Button.`);
       } catch (err) {
         this.logger.warn(`[Step 01] Could not find login fields automatically. Manual intervention might be needed.`);
+        const pageHtml = await page.evaluate(() => document.body.innerHTML);
+        this.logger.log(`[DEBUG] Page HTML snippet: ${pageHtml.substring(0, 800)}...`);
       }
 
       // ==========================================
