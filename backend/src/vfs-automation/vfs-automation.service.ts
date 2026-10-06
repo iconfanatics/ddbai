@@ -101,7 +101,11 @@ export class VfsAutomationService {
       await page.goto(targetUrl, { waitUntil: 'domcontentloaded' });
       
       // Wait for the page to render completely
-      await page.waitForTimeout(3000); 
+      await page.waitForTimeout(5000); 
+
+      this.logger.log(`[Step 01] Taking a screenshot of the login page to check for Cloudflare...`);
+      await page.screenshot({ path: '/app/debug-login.png' });
+      this.logger.log(`[Step 01] Screenshot saved to /app/debug-login.png`);
 
       // Trying standard VFS login selectors
       const emailSelector = 'input[formcontrolname="username"], input[name="Email"], input[type="text"]'; 
