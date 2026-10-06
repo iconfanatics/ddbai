@@ -61,10 +61,10 @@ export class VfsAutomationService {
       }
 
       // ==========================================
-      // LAUNCH BROWSER (Visible for Local Testing)
+      // LAUNCH BROWSER (Headless for Server)
       // ==========================================
       browser = await chromium.launch({
-        headless: false, // VISIBLE MODE: Set to true only in production (Ubuntu VPS)
+        headless: true, // SET TO TRUE for Ubuntu VPS
         proxy: proxyConfig,
         args: launchArgs,
       });
