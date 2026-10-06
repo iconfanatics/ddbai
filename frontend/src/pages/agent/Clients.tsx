@@ -509,7 +509,7 @@ export default function Clients() {
       )}
 
       {/* Table Section */}
-      <div className="bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden pb-16">
+      <div className="bg-white border border-gray-200 rounded-lg shadow-sm overflow-visible pb-16">
         <table className="min-w-full divide-y divide-gray-200 relative">
           <thead className="bg-gray-50 text-xs text-gray-500 uppercase tracking-wider">
             <tr>
