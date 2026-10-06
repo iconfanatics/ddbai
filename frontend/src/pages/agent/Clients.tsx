@@ -110,6 +110,10 @@ export default function Clients() {
 
   useEffect(() => {
     fetchClients();
+    const interval = setInterval(() => {
+      fetchClients(true); // silent fetch
+    }, 5000);
+    return () => clearInterval(interval);
   }, []);
 
   const handleModalClose = () => {

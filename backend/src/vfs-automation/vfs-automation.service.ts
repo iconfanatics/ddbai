@@ -1,9 +1,12 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { chromium, Browser } from 'playwright';
+import { PrismaService } from '../prisma/prisma.service.js';
 
 @Injectable()
 export class VfsAutomationService {
   private readonly logger = new Logger(VfsAutomationService.name);
+
+  constructor(private prisma: PrismaService) {}
 
   // Alias for compatibility with your existing applications.service.ts
   async loginToVFS(
@@ -11,9 +14,17 @@ export class VfsAutomationService {
     vfsPassword: string,
     proxyString: string,
     mediaVideoPath: string | null = null,
-    targetUrl: string = 'https://visa.vfsglobal.com/bgd/en/prt/login', 
+    targetUrl: string = 'https://visa.vfsglobal.com/bgd/en/prt/login',
+    applicationId?: string
   ): Promise<boolean> {
-    return this.processVfsApplication(vfsEmail, vfsPassword, proxyString, mediaVideoPath, targetUrl);
+    return this.processVfsApplication(vfsEmail, vfsPassword, proxyString, mediaVideoPath, targetUrl, undefined, applicationId);
+  }
+
+  async updateAppStatus(id: string, status: string) {
+    if (!id) return;
+    try {
+      await this.prisma.application.update({ where: { id }, data: { status } });
+    } catch (e) {}
   }
 
   async processVfsApplication(
@@ -22,9 +33,11 @@ export class VfsAutomationService {
     proxyString: string,
     mediaVideoPath: string | null = null,
     targetUrl: string = 'https://visa.vfsglobal.com/bgd/en/prt/login', 
-    applicationConfig?: any 
+    applicationConfig?: any,
+    applicationId?: string 
   ): Promise<boolean> {
     this.logger.log(`Starting VFS automation for ${vfsEmail} on ${targetUrl}`);
+    if (applicationId) await this.updateAppStatus(applicationId, 'Starting browser...');
     let browser: Browser | null = null;
     
     try {

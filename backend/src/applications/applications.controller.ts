@@ -1,17 +1,37 @@
 import { Controller, Get, Post, Body, Param, Patch, Query, ConflictException, BadRequestException, UseGuards, Res } from '@nestjs/common';
 import type { Response } from 'express';
 import { ApplicationsService } from './applications.service.js';
+import { VfsAutomationService } from '../vfs-automation/vfs-automation.service.js';
 import { AuthGuard } from '@nestjs/passport';
 
 @UseGuards(AuthGuard('jwt'))
 @Controller('applications')
 export class ApplicationsController {
+  @Post(':id/vfs-automate')
+  async runVfsAutomation(@Param('id') id: string) {
+    const app = await this.applicationsService.getApplicationById(id);
+    if (!app) throw new NotFoundException('Application not found');
+    
+    // Fire and forget
+    this.vfsAutomationService.processVfsApplication(
+      app.vfsEmail || '',
+      app.vfsPassword || '',
+      app.proxy || '',
+      null,
+      'https://visa.vfsglobal.com/bgd/en/prt/login',
+      undefined,
+      id
+    ).catch(e => console.error(e));
+    
+    return { success: true, message: 'VFS Automation started' };
+  }
+
   @Get('temp-fix-db')
   async tempFixDb() {
     return this.applicationsService.tempFixDb();
   }
 
-  constructor(private readonly applicationsService: ApplicationsService) {}
+  constructor(private readonly applicationsService: ApplicationsService, private vfsAutomationService: VfsAutomationService) {}
 
   /** Global passport duplicate check — searches across ALL agents */
   @Get('check-passport')
