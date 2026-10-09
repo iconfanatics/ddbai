@@ -45,6 +45,7 @@ services:
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-prodpassword}
       MINIO_API_CORS_ALLOW_ORIGIN: '*'
       NODE_ENV: production
+      CAPSOLVER_API_KEY: ${CAPSOLVER_API_KEY}
     depends_on:
       - db
       - redis
@@ -61,6 +62,7 @@ services:
     environment:
       DATABASE_URL: postgresql://visasync:visasync_password@db:5432/visasync_db?schema=public
       NODE_ENV: production
+      CAPSOLVER_API_KEY: ${CAPSOLVER_API_KEY}
     depends_on:
       - db
       - redis
