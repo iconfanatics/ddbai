@@ -190,6 +190,11 @@ export class VfsAutomationService {
         if (applicationId) await this.updateAppStatus(applicationId, 'Logged In Successfully!');
       } catch (err) {
         this.logger.warn(`[Step 02] Could not find "Start New Booking". Stuck on Cloudflare or Loading?`);
+        const pageTitle2 = await page.title();
+        const pageHtml2 = await page.evaluate(() => document.body.innerHTML);
+        this.logger.log(`[DEBUG-STEP-2] PAGE TITLE: "${pageTitle2}"`);
+        this.logger.log(`[DEBUG-STEP-2] HTML snippet: ${pageHtml2.substring(0, 3000)}...`);
+        await page.screenshot({ path: '/app/debug-dashboard-failed.png' });
       }
       
       // ==========================================
