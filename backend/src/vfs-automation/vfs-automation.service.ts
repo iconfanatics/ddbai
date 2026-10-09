@@ -166,11 +166,22 @@ export class VfsAutomationService {
         
         // Type slowly to trigger Angular validation
         await page.locator(emailSelector).pressSequentially(vfsEmail, { delay: 100 });
+        await page.keyboard.press('Tab'); // trigger blur
         this.logger.log(`[Step 01] Entered Email.`);
         if (applicationId) await this.updateAppStatus(applicationId, 'Entering credentials...');
         
         await page.locator(passwordSelector).pressSequentially(vfsPassword, { delay: 100 });
+        await page.keyboard.press('Tab'); // trigger blur
         this.logger.log(`[Step 01] Entered Password.`);
+
+        // DEBUG: Check Angular form state
+        const formDebug = await page.evaluate(() => {
+           const form = document.querySelector('form');
+           if (!form) return 'No form found';
+           const inputs = Array.from(form.querySelectorAll('[formcontrolname], input'));
+           return inputs.map((i: any) => `${i.getAttribute('formcontrolname') || i.getAttribute('name') || i.id || 'unknown'}: ${i.className}`).join(' | ');
+        });
+        this.logger.log(`[DEBUG] Form Control States: ${formDebug}`);
         
         // CHECK IF CAPSOLVER IS CONFIGURED
         const capsolverKey = process.env.CAPSOLVER_API_KEY;
