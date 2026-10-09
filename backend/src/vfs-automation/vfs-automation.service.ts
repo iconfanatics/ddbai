@@ -174,21 +174,21 @@ export class VfsAutomationService {
         await page.keyboard.press('Tab'); // trigger blur
         this.logger.log(`[Step 01] Entered Password.`);
 
-        // DEBUG: Check Angular form state
-        const formDebug = await page.evaluate(() => {
-           const form = document.querySelector('form');
-           if (!form) return 'No form found';
-           const inputs = Array.from(form.querySelectorAll('[formcontrolname], input'));
-           return inputs.map((i: any) => `${i.getAttribute('formcontrolname') || i.getAttribute('name') || i.id || 'unknown'}: ${i.className}`).join(' | ');
+        // DEBUG: Find exact invalid controls and errors
+        const invalidDebug = await page.evaluate(() => {
+           const invalidEls = Array.from(document.querySelectorAll('.ng-invalid'));
+           const invalidNames = invalidEls.map(el => {
+               return el.tagName.toLowerCase() + (el.getAttribute('formcontrolname') ? `[formcontrolname="${el.getAttribute('formcontrolname')}"]` : '') + ' class: ' + el.className;
+           });
+           
+           const errorEls = Array.from(document.querySelectorAll('mat-error, .c-brand-error, .toast-message, .mat-mdc-form-field-error, app-captcha, .cf-turnstile'));
+           const errorTexts = errorEls.map(el => el.tagName.toLowerCase() + ': ' + (el.textContent || el.innerHTML).trim());
+           
+           return { invalidNames, errorTexts };
         });
-        this.logger.log(`[DEBUG] Form Control States: ${formDebug}`);
+        this.logger.log(`[DEBUG] Invalid Elements: ${JSON.stringify(invalidDebug.invalidNames)}`);
+        this.logger.log(`[DEBUG] Errors/Captcha tags: ${JSON.stringify(invalidDebug.errorTexts)}`);
 
-        // Extract form HTML for debugging Captcha existence
-        const formHtml = await page.evaluate(() => {
-            const form = document.querySelector('form');
-            return form ? form.innerHTML : 'No form';
-        });
-        this.logger.log(`[DEBUG] Form HTML snippet: ${formHtml.substring(0, 1500)}`);
         
         // CHECK IF CAPSOLVER IS CONFIGURED
         const capsolverKey = process.env.CAPSOLVER_API_KEY;
