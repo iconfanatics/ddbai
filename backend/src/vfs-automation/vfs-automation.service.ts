@@ -104,6 +104,9 @@ export class VfsAutomationService {
 
       const page = await context.newPage();
       
+      // OPTIMIZATION: Block images, css, and fonts to make it VERY FAST
+      await page.route('**/*.{png,jpg,jpeg,webp,css,woff,woff2}', route => route.abort());
+
       // ==========================================
       // STEP 01 - Login Page
       // ==========================================
@@ -124,13 +127,12 @@ export class VfsAutomationService {
       const pageText = await page.evaluate(() => document.body.innerText.substring(0, 300));
       this.logger.log(`[Step 01] PAGE CONTENT PREVIEW: ${pageText.replace(/\n/g, ' ')}`);
 
-      // 1. Accept Cookies
+      // 1. Accept Cookies (force click)
       try {
-        const btn = await page.waitForSelector('button:has-text("Accept All Cookies"), button#onetrust-accept-btn-handler', { timeout: 5000 });
+        const btn = await page.waitForSelector('button:has-text("Accept All Cookies"), button#onetrust-accept-btn-handler', { timeout: 3000 });
         if (btn) {
-          await btn.click();
+          await btn.click({ force: true });
           this.logger.log(`[Step 01] Clicked "Accept All Cookies"`);
-          await page.waitForTimeout(1000); // Wait for modal to close
         }
       } catch (err) {
         this.logger.log(`[Step 01] No Cookie popup found or already accepted.`);
@@ -138,23 +140,30 @@ export class VfsAutomationService {
 
       // Trying standard VFS login selectors
       // Avoiding .d-none because VFS puts a hidden honeypot input field before the real one
-      const emailSelector = 'input[formcontrolname="username"]:not(.d-none), input#email, input[id^="mat-input-"]:not(.d-none)'; 
-      const passwordSelector = 'input[formcontrolname="password"]:not(.d-none), input#password';
-      const loginBtnSelector = 'button:has-text("Sign in"), button:has-text("Login"), button.mat-focus-indicator';
+      const emailSelector = 'input[formcontrolname="username"]:not(.d-none), input#email, input#mat-input-0'; 
+      const passwordSelector = 'input[formcontrolname="password"]:not(.d-none), input#password, input#mat-input-1';
+      const loginBtnSelector = 'button:has-text("Sign in"), button:has-text("Login"), button.mat-raised-button.mat-primary';
 
       try {
         // Wait for loading spinner to disappear if it exists
         this.logger.log(`[Step 01] Waiting for form fields to render...`);
         await page.waitForSelector(emailSelector, { timeout: 15000 });
-        await page.fill(emailSelector, vfsEmail);
+        
+        // Use force: true to bypass any invisible overlays
+        await page.fill(emailSelector, vfsEmail, { force: true });
         this.logger.log(`[Step 01] Entered Email.`);
         if (applicationId) await this.updateAppStatus(applicationId, 'Entering credentials...');
         
-        await page.fill(passwordSelector, vfsPassword);
+        await page.fill(passwordSelector, vfsPassword, { force: true });
         this.logger.log(`[Step 01] Entered Password.`);
         
-        await page.click(loginBtnSelector);
+        await page.click(loginBtnSelector, { force: true });
         this.logger.log(`[Step 01] Clicked Login Button.`);
+        
+        // OPTIMIZATION: Wait for network to be idle after login, then save session
+        await page.waitForTimeout(5000);
+        await context.storageState({ path: '/app/vfs-session.json' });
+        this.logger.log(`[Step 01] Saved browser session for faster future logins!`);
       } catch (err) {
         this.logger.warn(`[Step 01] Could not find login fields automatically. Check if Turnstile is active.`);
         const hasTurnstile = await page.$('iframe[src*="cloudflare"]');
