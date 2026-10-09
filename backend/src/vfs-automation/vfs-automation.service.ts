@@ -182,6 +182,13 @@ export class VfsAutomationService {
            return inputs.map((i: any) => `${i.getAttribute('formcontrolname') || i.getAttribute('name') || i.id || 'unknown'}: ${i.className}`).join(' | ');
         });
         this.logger.log(`[DEBUG] Form Control States: ${formDebug}`);
+
+        // Extract form HTML for debugging Captcha existence
+        const formHtml = await page.evaluate(() => {
+            const form = document.querySelector('form');
+            return form ? form.innerHTML : 'No form';
+        });
+        this.logger.log(`[DEBUG] Form HTML snippet: ${formHtml.substring(0, 1500)}`);
         
         // CHECK IF CAPSOLVER IS CONFIGURED
         const capsolverKey = process.env.CAPSOLVER_API_KEY;
@@ -195,7 +202,7 @@ export class VfsAutomationService {
                const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
                for (let i = 0; i < 20; i++) {
                  // Try finding standard .cf-turnstile div
-                 const cfEl = document.querySelector('.cf-turnstile');
+                 const cfEl = document.querySelector('.cf-turnstile, [data-sitekey]');
                  if (cfEl) {
                    const key = cfEl.getAttribute('data-sitekey');
                    if (key) return key;
@@ -268,7 +275,14 @@ export class VfsAutomationService {
                if (solutionToken) {
                  this.logger.log(`[Step 01] CapSolver success! Injecting Turnstile token...`);
                  await page.evaluate((token) => {
-                    const input = document.querySelector('input[name="cf-turnstile-response"]') as HTMLInputElement;
+                    let input = document.querySelector('input[name="cf-turnstile-response"]') as HTMLInputElement;
+                    if (!input) {
+                        input = document.createElement('input');
+                        input.type = 'hidden';
+                        input.name = 'cf-turnstile-response';
+                        const form = document.querySelector('form');
+                        if (form) form.appendChild(input);
+                    }
                     if (input) {
                       input.value = token;
                       input.dispatchEvent(new Event('input', { bubbles: true }));
@@ -294,8 +308,16 @@ export class VfsAutomationService {
           await page.waitForTimeout(10000);
         }
         
+        // Force remove disabled attributes and click
+        await page.evaluate(() => {
+           document.querySelectorAll('button').forEach(b => b.removeAttribute('disabled'));
+        });
+        await page.waitForTimeout(500);
         await page.click(loginBtnSelector, { force: true });
         this.logger.log(`[Step 01] Clicked Login Button.`);
+        
+        // Fallback: try pressing Enter on the form
+        await page.keyboard.press('Enter');
         
         // OPTIMIZATION: Wait for network to be idle after login, then save session
         await page.waitForTimeout(5000);
