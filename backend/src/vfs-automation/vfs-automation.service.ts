@@ -103,9 +103,6 @@ export class VfsAutomationService {
       });
 
       const page = await context.newPage();
-      
-      // OPTIMIZATION: Block images, css, and fonts to make it VERY FAST
-      await page.route('**/*.{png,jpg,jpeg,webp,css,woff,woff2}', route => route.abort());
 
       // ==========================================
       // STEP 01 - Login Page
@@ -158,10 +155,10 @@ export class VfsAutomationService {
         this.logger.log(`[Step 01] Entered Password.`);
         
         // Wait for Cloudflare Turnstile to auto-solve
-        this.logger.log(`[Step 01] Waiting 5 seconds for Cloudflare Turnstile to auto-solve...`);
-        await page.waitForTimeout(5000);
+        this.logger.log(`[Step 01] Waiting 10 seconds for Cloudflare Turnstile to auto-solve...`);
+        await page.waitForTimeout(10000);
         
-        await page.click(loginBtnSelector);
+        await page.click(loginBtnSelector, { force: true });
         this.logger.log(`[Step 01] Clicked Login Button.`);
         
         // OPTIMIZATION: Wait for network to be idle after login, then save session
