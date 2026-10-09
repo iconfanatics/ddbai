@@ -179,20 +179,31 @@ export class VfsAutomationService {
           if (applicationId) await this.updateAppStatus(applicationId, 'Solving Turnstile Captcha...');
           
           try {
-            // Find sitekey
-            const sitekey = await page.evaluate(() => {
-               // VFS Angular wrapper might pass sitekey in a specific way, fallback to DOM search
-               const cfEl = document.querySelector('.cf-turnstile');
-               if (cfEl) return cfEl.getAttribute('data-sitekey');
-               
-               // If not, look in iframe
-               const iframe = document.querySelector('iframe[src*="turnstile"]');
-               if (iframe) {
-                 const src = iframe.getAttribute('src');
-                 if (src) {
-                   const match = src.match(/k=([^&]+)/);
-                   if (match) return match[1];
+            // Find sitekey by waiting for it to render
+            let sitekey = await page.evaluate(async () => {
+               const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
+               for (let i = 0; i < 20; i++) {
+                 // Try finding standard .cf-turnstile div
+                 const cfEl = document.querySelector('.cf-turnstile');
+                 if (cfEl) {
+                   const key = cfEl.getAttribute('data-sitekey');
+                   if (key) return key;
                  }
+                 
+                 // Try extracting from any Turnstile iframe
+                 const iframes = document.querySelectorAll('iframe');
+                 for (let j = 0; j < iframes.length; j++) {
+                   const src = iframes[j].getAttribute('src');
+                   if (src && src.includes('turnstile')) {
+                     // Look for k=...
+                     const kMatch = src.match(/k=([^&]+)/);
+                     if (kMatch) return kMatch[1];
+                     // Look for typical path structure: /0x4AAAAAAA.../
+                     const pathMatch = src.match(/\/(0x[a-zA-Z0-9_-]+)/);
+                     if (pathMatch) return pathMatch[1];
+                   }
+                 }
+                 await sleep(500);
                }
                return null;
             });
