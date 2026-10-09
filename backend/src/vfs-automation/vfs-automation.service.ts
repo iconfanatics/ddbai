@@ -104,6 +104,28 @@ export class VfsAutomationService {
 
       const page = await context.newPage();
 
+      // Ensure we inject a script to intercept turnstile callback just in case CapSolver is used
+      await page.addInitScript(() => {
+        (window as any).turnstileCallback = null;
+        const originalTurnstile = (window as any).turnstile;
+        if (!originalTurnstile) {
+           let turnstileOverrides: any = {};
+           Object.defineProperty(window, 'turnstile', {
+             get: () => turnstileOverrides,
+             set: (val) => {
+               const origRender = val.render;
+               val.render = function(ele: any, options: any) {
+                 if (options && options.callback) {
+                   (window as any).turnstileCallback = options.callback;
+                 }
+                 return origRender.apply(this, [ele, options]);
+               };
+               turnstileOverrides = val;
+             }
+           });
+        }
+      });
+
       // ==========================================
       // STEP 01 - Login Page
       // ==========================================
@@ -121,9 +143,6 @@ export class VfsAutomationService {
       const pageTitle = await page.title();
       this.logger.log(`[Step 01] PAGE TITLE IS: "${pageTitle}"`);
       
-      const pageText = await page.evaluate(() => document.body.innerText.substring(0, 300));
-      this.logger.log(`[Step 01] PAGE CONTENT PREVIEW: ${pageText.replace(/\n/g, ' ')}`);
-
       // 1. Accept Cookies (force click)
       try {
         const btn = await page.waitForSelector('button:has-text("Accept All Cookies"), button#onetrust-accept-btn-handler', { timeout: 3000 });
@@ -136,7 +155,6 @@ export class VfsAutomationService {
       }
 
       // Trying standard VFS login selectors
-      // Avoiding .d-none because VFS puts a hidden honeypot input field before the real one
       const emailSelector = 'input[formcontrolname="username"]:not(.d-none), input#email, input#mat-input-0'; 
       const passwordSelector = 'input[formcontrolname="password"]:not(.d-none), input#password, input#mat-input-1';
       const loginBtnSelector = 'button:has-text("Sign in"), button:has-text("Login"), button.mat-raised-button.mat-primary';
@@ -154,9 +172,105 @@ export class VfsAutomationService {
         await page.locator(passwordSelector).pressSequentially(vfsPassword, { delay: 100 });
         this.logger.log(`[Step 01] Entered Password.`);
         
-        // Wait for Cloudflare Turnstile to auto-solve
-        this.logger.log(`[Step 01] Waiting 10 seconds for Cloudflare Turnstile to auto-solve...`);
-        await page.waitForTimeout(10000);
+        // CHECK IF CAPSOLVER IS CONFIGURED
+        const capsolverKey = process.env.CAPSOLVER_API_KEY;
+        if (capsolverKey) {
+          this.logger.log(`[Step 01] CAPSOLVER_API_KEY found. Attempting to solve Turnstile...`);
+          if (applicationId) await this.updateAppStatus(applicationId, 'Solving Turnstile Captcha...');
+          
+          try {
+            // Find sitekey
+            const sitekey = await page.evaluate(() => {
+               // VFS Angular wrapper might pass sitekey in a specific way, fallback to DOM search
+               const cfEl = document.querySelector('.cf-turnstile');
+               if (cfEl) return cfEl.getAttribute('data-sitekey');
+               
+               // If not, look in iframe
+               const iframe = document.querySelector('iframe[src*="turnstile"]');
+               if (iframe) {
+                 const src = iframe.getAttribute('src');
+                 if (src) {
+                   const match = src.match(/k=([^&]+)/);
+                   if (match) return match[1];
+                 }
+               }
+               return null;
+            });
+
+            if (sitekey) {
+               this.logger.log(`[Step 01] Found Turnstile SiteKey: ${sitekey}. Requesting CapSolver...`);
+               const taskPayload = {
+                 clientKey: capsolverKey,
+                 task: {
+                   type: "AntiTurnstileTaskProxyLess",
+                   websiteURL: targetUrl,
+                   websiteKey: sitekey,
+                 }
+               };
+               
+               const createRes = await fetch('https://api.capsolver.com/createTask', {
+                 method: 'POST',
+                 headers: { 'Content-Type': 'application/json' },
+                 body: JSON.stringify(taskPayload)
+               });
+               const createTaskResult = await createRes.json() as any;
+               
+               if (createTaskResult.errorId > 0) {
+                 throw new Error(createTaskResult.errorDescription);
+               }
+               
+               const taskId = createTaskResult.taskId;
+               let solutionToken = null;
+               
+               // Poll for result
+               for (let i = 0; i < 24; i++) { // wait up to 2 mins
+                 await page.waitForTimeout(5000);
+                 const resultRes = await fetch('https://api.capsolver.com/getTaskResult', {
+                   method: 'POST',
+                   headers: { 'Content-Type': 'application/json' },
+                   body: JSON.stringify({ clientKey: capsolverKey, taskId })
+                 });
+                 const result = await resultRes.json() as any;
+                 
+                 if (result.status === 'ready') {
+                   solutionToken = result.solution.token;
+                   break;
+                 } else if (result.status === 'processing') {
+                   this.logger.log(`[Step 01] CapSolver is processing...`);
+                   continue;
+                 } else {
+                   throw new Error(result.errorDescription);
+                 }
+               }
+               
+               if (solutionToken) {
+                 this.logger.log(`[Step 01] CapSolver success! Injecting Turnstile token...`);
+                 await page.evaluate((token) => {
+                    const input = document.querySelector('input[name="cf-turnstile-response"]') as HTMLInputElement;
+                    if (input) {
+                      input.value = token;
+                      input.dispatchEvent(new Event('input', { bubbles: true }));
+                      input.dispatchEvent(new Event('change', { bubbles: true }));
+                    }
+                    if (typeof (window as any).turnstileCallback === 'function') {
+                      (window as any).turnstileCallback(token);
+                    }
+                 }, solutionToken);
+                 await page.waitForTimeout(2000); // Give Angular time to react
+               } else {
+                 this.logger.warn(`[Step 01] CapSolver timed out.`);
+               }
+            } else {
+               this.logger.warn(`[Step 01] Could not find Turnstile sitekey in DOM.`);
+            }
+          } catch (capErr: any) {
+            this.logger.error(`[Step 01] CapSolver Error: ${capErr.message}`);
+          }
+        } else {
+          // Wait for Cloudflare Turnstile to auto-solve naturally if no key
+          this.logger.log(`[Step 01] Waiting 10 seconds for Cloudflare Turnstile to auto-solve (No CapSolver Key)...`);
+          await page.waitForTimeout(10000);
+        }
         
         await page.click(loginBtnSelector, { force: true });
         this.logger.log(`[Step 01] Clicked Login Button.`);
