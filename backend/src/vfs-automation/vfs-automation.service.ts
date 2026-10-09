@@ -145,19 +145,23 @@ export class VfsAutomationService {
       const loginBtnSelector = 'button:has-text("Sign in"), button:has-text("Login"), button.mat-raised-button.mat-primary';
 
       try {
-        // Wait for loading spinner to disappear if it exists
+        // Wait for form fields to render
         this.logger.log(`[Step 01] Waiting for form fields to render...`);
-        await page.waitForSelector(emailSelector, { timeout: 15000 });
+        await page.waitForSelector(emailSelector, { state: 'visible', timeout: 15000 });
         
-        // Use force: true to bypass any invisible overlays
-        await page.fill(emailSelector, vfsEmail, { force: true });
+        // Type slowly to trigger Angular validation
+        await page.locator(emailSelector).pressSequentially(vfsEmail, { delay: 100 });
         this.logger.log(`[Step 01] Entered Email.`);
         if (applicationId) await this.updateAppStatus(applicationId, 'Entering credentials...');
         
-        await page.fill(passwordSelector, vfsPassword, { force: true });
+        await page.locator(passwordSelector).pressSequentially(vfsPassword, { delay: 100 });
         this.logger.log(`[Step 01] Entered Password.`);
         
-        await page.click(loginBtnSelector, { force: true });
+        // Wait for Cloudflare Turnstile to auto-solve
+        this.logger.log(`[Step 01] Waiting 5 seconds for Cloudflare Turnstile to auto-solve...`);
+        await page.waitForTimeout(5000);
+        
+        await page.click(loginBtnSelector);
         this.logger.log(`[Step 01] Clicked Login Button.`);
         
         // OPTIMIZATION: Wait for network to be idle after login, then save session
