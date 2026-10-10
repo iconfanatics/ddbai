@@ -97,6 +97,7 @@ export class VfsAutomationService {
 
       if (!browser) throw new Error('Failed to launch browser');
 
+      const context = await browser.newContext();
       const page = await context.newPage();
       
       // ==========================================
@@ -135,7 +136,7 @@ export class VfsAutomationService {
       }
 
       // LOG API RESPONSES
-      page.on('response', async (response) => {
+      page.on('response', async (response: any) => {
          if (response.url().includes('/api/')) {
              try {
                 this.logger.log(`[API RESPONSE] ${response.url()} : ${response.status()}`);
@@ -338,7 +339,7 @@ export class VfsAutomationService {
                
                if (solutionToken) {
                  this.logger.log(`[Step 01] CapSolver success! Injecting Turnstile token...`);
-                 await page.evaluate((token) => {
+                 await page.evaluate((token: string) => {
                     let input = document.querySelector('input[name="cf-turnstile-response"]') as HTMLInputElement;
                     if (!input) {
                         input = document.createElement('input');
