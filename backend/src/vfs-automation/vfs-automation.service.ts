@@ -274,10 +274,26 @@ export class VfsAutomationService {
         });
       });
 
-      // Log all API responses for debugging
+      // =========================================================
+      // INTERCEPT NETWORK to capture actual Turnstile sitekey
+      // Cloudflare requests contain the sitekey in the URL path:
+      // /cdn-cgi/challenge-platform/.../rcv0/0x4AAAA.../...
+      // =========================================================
+      let capturedSitekey: string | null = null;
+      page.on('request', (request: any) => {
+        const url: string = request.url();
+        // Match sitekey pattern: /rcv0/0x... or /sitekey/0x...
+        const skMatch = url.match(/\/(?:rcv0|sitekey)\/(0x[a-zA-Z0-9_-]+)/);
+        if (skMatch && !capturedSitekey) {
+          capturedSitekey = skMatch[1];
+          this.logger.log(`[NET] 🔑 Captured Turnstile sitekey from network: ${capturedSitekey}`);
+        }
+      });
+
+      // Log all Turnstile/API network responses for debugging
       page.on('response', async (response: any) => {
         const url: string = response.url();
-        if (url.includes('/api/') || url.includes('capsolver') || url.includes('turnstile')) {
+        if (url.includes('/api/') || url.includes('capsolver') || url.includes('turnstile') || url.includes('cloudflare')) {
           try {
             this.logger.log(`[NET] ${response.status()} ${url}`);
           } catch (e) {}
@@ -351,9 +367,19 @@ export class VfsAutomationService {
       if (capsolverKey) {
         if (applicationId) await this.updateAppStatus(applicationId, 'Solving Turnstile via CapSolver...');
 
-        // Prefer DOM sitekey; fallback to hardcoded VFS key
-        const sitekey = domDebug.cfSitekey || VFS_TURNSTILE_SITEKEY;
-        this.logger.log(`[Step 01] Using Turnstile sitekey: ${sitekey} (${domDebug.cfSitekey ? 'from DOM' : 'HARDCODED FALLBACK'})`);
+        // Wait up to 8s for Turnstile network requests to fire and capture sitekey
+        if (!capturedSitekey) {
+          this.logger.log(`[Step 01] Waiting for Turnstile network requests to capture sitekey...`);
+          for (let i = 0; i < 16; i++) {
+            await page.waitForTimeout(500);
+            if (capturedSitekey) break;
+          }
+        }
+
+        // Priority: 1) network-captured  2) DOM attribute  3) hardcoded fallback
+        const sitekey = capturedSitekey || domDebug.cfSitekey || VFS_TURNSTILE_SITEKEY;
+        const skSource = capturedSitekey ? 'from NETWORK ✅' : (domDebug.cfSitekey ? 'from DOM' : 'HARDCODED FALLBACK ⚠️');
+        this.logger.log(`[Step 01] Using Turnstile sitekey: ${sitekey} (${skSource})`);
 
         const token = await this.solveTurnstileWithCapSolver(capsolverKey, targetUrl, sitekey);
 
