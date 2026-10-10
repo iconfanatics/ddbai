@@ -30,7 +30,7 @@ export class VfsAutomationService {
 
     try {
       this.logger.log('[Proxy] Fetching random proxy from Webshare API...');
-      const res = await fetch('https://proxy.webshare.io/api/v2/proxy/list/?mode=direct&page=1&page_size=25&country_code__in=DE,NL,FR,GB,US', {
+      const res = await fetch('https://proxy.webshare.io/api/v2/proxy/list/?mode=direct&page=1&page_size=25', {
         headers: {
           'Authorization': `Token ${webshareApiKey}`,
         },
