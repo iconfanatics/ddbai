@@ -251,19 +251,25 @@ export class VfsAutomationService {
         await this.updateAppStatus(applicationId, `IP: ${proxyIp} | CapSolver: $${capBalance}`);
       }
 
-      // Intercept Turnstile callback for token injection
+      // Intercept Turnstile to capture sitekey + auto-token
       await page.addInitScript(() => {
         (window as any).__turnstileToken = null;
+        (window as any).__turnstileSitekey = null;
         Object.defineProperty(window, 'turnstile', {
           get: () => (window as any).__turnstileImpl,
           set: (val: any) => {
             const origRender = val.render;
             val.render = function (ele: any, options: any) {
+              // ⭐ Capture the sitekey from render options
+              const sk = options?.sitekey || options?.websiteKey || options?.site_key;
+              if (sk) (window as any).__turnstileSitekey = sk;
+
+              // Also capture token when callback fires (auto-solve)
               if (options?.callback) {
-                const origCallback = options.callback;
+                const origCb = options.callback;
                 options.callback = (token: string) => {
                   (window as any).__turnstileToken = token;
-                  return origCallback(token);
+                  return origCb(token);
                 };
               }
               return origRender.apply(this, [ele, options]);
@@ -345,8 +351,16 @@ export class VfsAutomationService {
 
       await page.locator(passwordSelector).pressSequentially(vfsPassword, { delay: 80 });
       await page.keyboard.press('Tab');
-      await page.waitForTimeout(500);
-      this.logger.log(`[Step 01] Entered Password.`);
+      this.logger.log(`[Step 01] Entered Password. Waiting 12s for Angular/Cloudflare to initialize captcha...`);
+      
+      // Wait for Angular to render the captcha component and Turnstile to call render()
+      await page.waitForTimeout(12000);
+
+      // Read sitekey captured by our initScript interceptor
+      const initScriptSitekey = await page.evaluate(() => (window as any).__turnstileSitekey as string | null);
+      const initScriptToken = await page.evaluate(() => (window as any).__turnstileToken as string | null);
+      this.logger.log(`[DEBUG] initScript captured sitekey: ${initScriptSitekey}`);
+      this.logger.log(`[DEBUG] initScript auto-token: ${initScriptToken ? 'YES ✅' : 'null'}`);
 
       // ================================================================
       // DEEP SCAN: Find sitekey from DOM, scripts, and iframe sources
@@ -431,21 +445,19 @@ export class VfsAutomationService {
       if (capsolverKey) {
         if (applicationId) await this.updateAppStatus(applicationId, 'Solving Turnstile via CapSolver...');
 
-        // Wait up to 8s for Turnstile network requests to fire and capture sitekey
-        if (!capturedSitekey) {
-          this.logger.log(`[Step 01] Waiting for Turnstile network requests to capture sitekey...`);
-          for (let i = 0; i < 16; i++) {
-            await page.waitForTimeout(500);
-            if (capturedSitekey) break;
-          }
-        }
-
-        // Priority: 1) network  2) iframe src  3) inline script  4) DOM attr  5) hardcoded
-        const sitekey = capturedSitekey || iframeSitekey || domDebug.scriptKeys[0] || domDebug.cfSitekey || VFS_TURNSTILE_SITEKEY;
-        const skSource = capturedSitekey ? 'NETWORK ✅' : iframeSitekey ? 'IFRAME ✅' : domDebug.scriptKeys[0] ? 'SCRIPT ✅' : domDebug.cfSitekey ? 'DOM' : 'HARDCODED ⚠️';
+        // Remove redundant network wait (already waited 12s above)
+        // Priority: 0) initScript render-captured  1) network  2) iframe  3) script  4) DOM  5) hardcoded
+        const sitekey = initScriptSitekey || capturedSitekey || iframeSitekey || domDebug.scriptKeys[0] || domDebug.cfSitekey || VFS_TURNSTILE_SITEKEY;
+        const skSource = initScriptSitekey ? 'RENDER INTERCEPT ✅' : capturedSitekey ? 'NETWORK ✅' : iframeSitekey ? 'IFRAME ✅' : domDebug.scriptKeys[0] ? 'SCRIPT ✅' : domDebug.cfSitekey ? 'DOM' : 'HARDCODED ⚠️';
         this.logger.log(`[Step 01] Using Turnstile sitekey: ${sitekey} (${skSource})`);
 
-        const token = await this.solveTurnstileWithCapSolver(capsolverKey, targetUrl, sitekey);
+        // If Turnstile already auto-solved (invisible mode), skip CapSolver
+        let token: string | null = initScriptToken;
+        if (token) {
+          this.logger.log(`[Step 01] ✅ Turnstile auto-solved! Token already captured from initScript.`);
+        } else {
+          token = await this.solveTurnstileWithCapSolver(capsolverKey, targetUrl, sitekey);
+        }
 
         if (token) {
           this.logger.log(`[Step 01] Injecting Turnstile token into page...`);
