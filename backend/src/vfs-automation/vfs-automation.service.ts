@@ -97,13 +97,43 @@ export class VfsAutomationService {
 
       if (!browser) throw new Error('Failed to launch browser');
 
-      const context = await browser.newContext({
-        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        viewport: { width: 1280, height: 720 },
-      });
-
       const page = await context.newPage();
       
+      // ==========================================
+      // STEP 00 - Verify Proxy and CapSolver
+      // ==========================================
+      this.logger.log(`[Step 00] Verifying Proxy IP...`);
+      let proxyIp = 'Local/Direct';
+      try {
+          await page.goto('https://api.ipify.org?format=json', { waitUntil: 'domcontentloaded', timeout: 15000 });
+          const ipText = await page.innerText('body');
+          proxyIp = JSON.parse(ipText).ip;
+          this.logger.log(`[Step 00] Connected Proxy IP: ${proxyIp}`);
+      } catch(e) {
+          this.logger.warn(`[Step 00] Could not fetch IP (Proxy might be slow or blocked).`);
+      }
+
+      let capBalance = 'N/A';
+      const capsolverKey = process.env.CAPSOLVER_API_KEY;
+      if (capsolverKey) {
+          try {
+              const balanceRes = await fetch('https://api.capsolver.com/getBalance', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ clientKey: capsolverKey })
+              });
+              const balanceData = await balanceRes.json() as any;
+              capBalance = balanceData.balance || '0.00';
+              this.logger.log(`[Step 00] CapSolver Balance: $${capBalance}`);
+          } catch(e) {
+              this.logger.warn(`[Step 00] Failed to fetch CapSolver balance.`);
+          }
+      }
+      
+      if (applicationId) {
+          await this.updateAppStatus(applicationId, `IP: ${proxyIp} | CapSolver: $${capBalance}`);
+      }
+
       // LOG API RESPONSES
       page.on('response', async (response) => {
          if (response.url().includes('/api/')) {
