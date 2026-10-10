@@ -46,6 +46,8 @@ services:
       MINIO_API_CORS_ALLOW_ORIGIN: '*'
       NODE_ENV: production
       CAPSOLVER_API_KEY: ${CAPSOLVER_API_KEY}
+      WEBSHARE_API_KEY: ${WEBSHARE_API_KEY}
+      VFS_TURNSTILE_SITEKEY: ${VFS_TURNSTILE_SITEKEY:-0x4AAAAAAAc5-scBJxJSPOkH}
     depends_on:
       - db
       - redis
@@ -63,6 +65,8 @@ services:
       DATABASE_URL: postgresql://visasync:visasync_password@db:5432/visasync_db?schema=public
       NODE_ENV: production
       CAPSOLVER_API_KEY: ${CAPSOLVER_API_KEY}
+      WEBSHARE_API_KEY: ${WEBSHARE_API_KEY}
+      VFS_TURNSTILE_SITEKEY: ${VFS_TURNSTILE_SITEKEY:-0x4AAAAAAAc5-scBJxJSPOkH}
     depends_on:
       - db
       - redis

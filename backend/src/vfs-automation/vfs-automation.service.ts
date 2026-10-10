@@ -3,13 +3,118 @@ import { Browser } from 'playwright';
 
 import { PrismaService } from '../prisma/prisma.service.js';
 
+// ============================================================
+// VFS Global Portugal Bangladesh - Cloudflare Turnstile Sitekey
+// This key is static for the VFS BGD→PRT login page.
+// Update if VFS changes it (check network tab for challenges.cloudflare.com requests)
+// ============================================================
+const VFS_TURNSTILE_SITEKEY = process.env.VFS_TURNSTILE_SITEKEY || '0x4AAAAAAAc5-scBJxJSPOkH';
+
 @Injectable()
 export class VfsAutomationService {
   private readonly logger = new Logger(VfsAutomationService.name);
 
   constructor(private prisma: PrismaService) {}
 
-  // Alias for compatibility with your existing applications.service.ts
+  // ============================================================
+  // WEBSHARE PROXY ROTATION
+  // Fetches a random proxy from your Webshare account via API.
+  // Falls back to the static proxyString if API key is not set.
+  // ============================================================
+  private async getRotatedProxy(staticProxyString: string): Promise<string> {
+    const webshareApiKey = process.env.WEBSHARE_API_KEY;
+    if (!webshareApiKey) {
+      this.logger.log('[Proxy] No WEBSHARE_API_KEY set. Using static proxy string.');
+      return staticProxyString;
+    }
+
+    try {
+      this.logger.log('[Proxy] Fetching random proxy from Webshare API...');
+      const res = await fetch('https://proxy.webshare.io/api/v2/proxy/list/?mode=direct&page=1&page_size=25', {
+        headers: {
+          'Authorization': `Token ${webshareApiKey}`,
+        },
+      });
+      const data = await res.json() as any;
+      const proxies: any[] = data.results || [];
+
+      if (proxies.length === 0) {
+        this.logger.warn('[Proxy] No proxies returned from Webshare API. Using static proxy.');
+        return staticProxyString;
+      }
+
+      // Pick a random proxy from the list
+      const randomProxy = proxies[Math.floor(Math.random() * proxies.length)];
+      const proxyUrl = `http://${randomProxy.username}:${randomProxy.password}@${randomProxy.proxy_address}:${randomProxy.port}`;
+      this.logger.log(`[Proxy] Selected random Webshare proxy: ${randomProxy.proxy_address}:${randomProxy.port}`);
+      return proxyUrl;
+    } catch (e: any) {
+      this.logger.warn(`[Proxy] Failed to fetch from Webshare API: ${e.message}. Falling back to static proxy.`);
+      return staticProxyString;
+    }
+  }
+
+  // ============================================================
+  // CAPSOLVER - Solve Turnstile using known sitekey
+  // Works even when Turnstile widget is NOT visible in DOM.
+  // ============================================================
+  private async solveTurnstileWithCapSolver(
+    capsolverKey: string,
+    websiteURL: string,
+    sitekey: string,
+  ): Promise<string | null> {
+    this.logger.log(`[CapSolver] Creating Turnstile task for sitekey: ${sitekey}`);
+
+    const createRes = await fetch('https://api.capsolver.com/createTask', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        clientKey: capsolverKey,
+        task: {
+          type: 'AntiTurnstileTaskProxyLess',
+          websiteURL,
+          websiteKey: sitekey,
+        },
+      }),
+    });
+    const createResult = await createRes.json() as any;
+
+    if (createResult.errorId > 0) {
+      this.logger.error(`[CapSolver] Task creation failed: ${createResult.errorDescription}`);
+      return null;
+    }
+
+    const taskId = createResult.taskId;
+    this.logger.log(`[CapSolver] Task created: ${taskId}. Polling for result...`);
+
+    // Poll up to 2 minutes (24 x 5s)
+    for (let i = 0; i < 24; i++) {
+      await new Promise(r => setTimeout(r, 5000));
+      const resultRes = await fetch('https://api.capsolver.com/getTaskResult', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ clientKey: capsolverKey, taskId }),
+      });
+      const result = await resultRes.json() as any;
+
+      if (result.status === 'ready') {
+        this.logger.log(`[CapSolver] ✅ Token received!`);
+        return result.solution.token as string;
+      } else if (result.status === 'processing') {
+        this.logger.log(`[CapSolver] Still processing... (attempt ${i + 1}/24)`);
+      } else {
+        this.logger.error(`[CapSolver] Error: ${result.errorDescription}`);
+        return null;
+      }
+    }
+
+    this.logger.warn(`[CapSolver] Timed out after 2 minutes.`);
+    return null;
+  }
+
+  // ============================================================
+  // PUBLIC API
+  // ============================================================
   async loginToVFS(
     vfsEmail: string,
     vfsPassword: string,
@@ -33,33 +138,38 @@ export class VfsAutomationService {
     vfsPassword: string,
     proxyString: string,
     mediaVideoPath: string | null = null,
-    targetUrl: string = 'https://visa.vfsglobal.com/bgd/en/prt/login', 
+    targetUrl: string = 'https://visa.vfsglobal.com/bgd/en/prt/login',
     applicationConfig?: any,
-    applicationId?: string 
+    applicationId?: string
   ): Promise<boolean> {
     this.logger.log(`Starting VFS automation for ${vfsEmail} on ${targetUrl}`);
     if (applicationId) await this.updateAppStatus(applicationId, 'Starting browser...');
     let browser: Browser | null = null;
-    
+
     try {
+      // ==========================================
+      // STEP 00a - ROTATE PROXY
+      // ==========================================
+      const resolvedProxyString = await this.getRotatedProxy(proxyString);
+
       // ==========================================
       // PROXY SETUP
       // ==========================================
-      let proxyConfig = undefined;
-      if (proxyString && proxyString.trim() !== '') {
+      let proxyConfig: any = undefined;
+      if (resolvedProxyString && resolvedProxyString.trim() !== '') {
         try {
-           const url = new URL(proxyString.startsWith('http') ? proxyString : `http://${proxyString}`);
-           const proxyServerStr = url.port ? `${url.protocol}//${url.hostname}:${url.port}` : `${url.protocol}//${url.hostname}`;
-           proxyConfig = {
-             server: proxyServerStr,
-             username: url.username,
-             password: url.password,
-           };
-           this.logger.log(`Using Proxy Server: ${proxyConfig.server}`);
-           if (applicationId) await this.updateAppStatus(applicationId, `Starting (Proxy: ${proxyConfig.server})`);
+          const url = new URL(resolvedProxyString.startsWith('http') ? resolvedProxyString : `http://${resolvedProxyString}`);
+          const proxyServerStr = url.port ? `${url.protocol}//${url.hostname}:${url.port}` : `${url.protocol}//${url.hostname}`;
+          proxyConfig = {
+            server: proxyServerStr,
+            username: url.username || undefined,
+            password: url.password || undefined,
+          };
+          this.logger.log(`Using Proxy Server: ${proxyConfig.server}`);
+          if (applicationId) await this.updateAppStatus(applicationId, `Starting (Proxy: ${proxyConfig.server})`);
         } catch (e) {
-           this.logger.warn(`Invalid proxy format. Attempting without proxy. Error: ${e}`);
-           if (applicationId) await this.updateAppStatus(applicationId, `Starting (No Proxy)`);
+          this.logger.warn(`Invalid proxy format. Attempting without proxy. Error: ${e}`);
+          if (applicationId) await this.updateAppStatus(applicationId, `Starting (No Proxy)`);
         }
       } else {
         if (applicationId) await this.updateAppStatus(applicationId, `Starting (No Proxy)`);
@@ -69,9 +179,11 @@ export class VfsAutomationService {
       // VIRTUAL CAMERA FLAGS (For Face Verification)
       // ==========================================
       const launchArgs = [
-        '--disable-blink-features=AutomationControlled', // Evade basic bot detection
+        '--disable-blink-features=AutomationControlled',
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
       ];
-      
+
       if (mediaVideoPath) {
         this.logger.log(`Injecting virtual camera video from: ${mediaVideoPath}`);
         launchArgs.push('--use-fake-ui-for-media-stream');
@@ -86,414 +198,281 @@ export class VfsAutomationService {
       const { chromium } = await import('playwright-extra');
       // @ts-ignore
       const { default: stealthPlugin } = await import('puppeteer-extra-plugin-stealth');
-      const stealth = stealthPlugin();
-      chromium.use(stealth);
+      chromium.use(stealthPlugin());
 
       browser = await chromium.launch({
-        headless: false, // Run headful to evade Cloudflare Turnstile bot detection
+        headless: false,
         proxy: proxyConfig,
         args: launchArgs,
       });
 
       if (!browser) throw new Error('Failed to launch browser');
 
-      const context = await browser.newContext();
+      const context = await browser.newContext({
+        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
+        locale: 'en-US',
+        timezoneId: 'Asia/Dhaka',
+      });
       const page = await context.newPage();
-      
+
       // ==========================================
-      // STEP 00 - Verify Proxy and CapSolver
+      // STEP 00b - Verify Proxy IP + CapSolver Balance
       // ==========================================
       this.logger.log(`[Step 00] Verifying Proxy IP...`);
       let proxyIp = 'Local/Direct';
       try {
-          await page.goto('https://api.ipify.org?format=json', { waitUntil: 'domcontentloaded', timeout: 15000 });
-          const ipText = await page.innerText('body');
-          proxyIp = JSON.parse(ipText).ip;
-          this.logger.log(`[Step 00] Connected Proxy IP: ${proxyIp}`);
-      } catch(e) {
-          this.logger.warn(`[Step 00] Could not fetch IP (Proxy might be slow or blocked).`);
+        await page.goto('https://api.ipify.org?format=json', { waitUntil: 'domcontentloaded', timeout: 15000 });
+        const ipText = await page.innerText('body');
+        proxyIp = JSON.parse(ipText).ip;
+        this.logger.log(`[Step 00] Connected Proxy IP: ${proxyIp}`);
+      } catch (e) {
+        this.logger.warn(`[Step 00] Could not fetch IP (Proxy might be slow or blocked).`);
       }
 
       let capBalance = 'N/A';
       const capsolverKey = process.env.CAPSOLVER_API_KEY;
       if (capsolverKey) {
-          try {
-              const balanceRes = await fetch('https://api.capsolver.com/getBalance', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ clientKey: capsolverKey })
-              });
-              const balanceData = await balanceRes.json() as any;
-              capBalance = balanceData.balance || '0.00';
-              this.logger.log(`[Step 00] CapSolver Balance: $${capBalance}`);
-          } catch(e) {
-              this.logger.warn(`[Step 00] Failed to fetch CapSolver balance.`);
-          }
-      }
-      
-      if (applicationId) {
-          await this.updateAppStatus(applicationId, `IP: ${proxyIp} | CapSolver: $${capBalance}`);
+        try {
+          const balanceRes = await fetch('https://api.capsolver.com/getBalance', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ clientKey: capsolverKey }),
+          });
+          const balanceData = await balanceRes.json() as any;
+          capBalance = balanceData.balance ?? '0.00';
+          this.logger.log(`[Step 00] CapSolver Balance: $${capBalance}`);
+        } catch (e) {
+          this.logger.warn(`[Step 00] Failed to fetch CapSolver balance.`);
+        }
       }
 
-      // LOG API RESPONSES
-      page.on('response', async (response: any) => {
-         if (response.url().includes('/api/')) {
-             try {
-                this.logger.log(`[API RESPONSE] ${response.url()} : ${response.status()}`);
-                const text = await response.text();
-                this.logger.log(`[API BODY] ${text.substring(0, 500)}`);
-             } catch (e) {}
-         }
+      if (applicationId) {
+        await this.updateAppStatus(applicationId, `IP: ${proxyIp} | CapSolver: $${capBalance}`);
+      }
+
+      // Intercept Turnstile callback for token injection
+      await page.addInitScript(() => {
+        (window as any).__turnstileToken = null;
+        Object.defineProperty(window, 'turnstile', {
+          get: () => (window as any).__turnstileImpl,
+          set: (val: any) => {
+            const origRender = val.render;
+            val.render = function (ele: any, options: any) {
+              if (options?.callback) {
+                const origCallback = options.callback;
+                options.callback = (token: string) => {
+                  (window as any).__turnstileToken = token;
+                  return origCallback(token);
+                };
+              }
+              return origRender.apply(this, [ele, options]);
+            };
+            (window as any).__turnstileImpl = val;
+          },
+          configurable: true,
+        });
       });
 
-      // Ensure we inject a script to intercept turnstile callback just in case CapSolver is used
-      await page.addInitScript(() => {
-        (window as any).turnstileCallback = null;
-        const originalTurnstile = (window as any).turnstile;
-        if (!originalTurnstile) {
-           let turnstileOverrides: any = {};
-           Object.defineProperty(window, 'turnstile', {
-             get: () => turnstileOverrides,
-             set: (val) => {
-               const origRender = val.render;
-               val.render = function(ele: any, options: any) {
-                 if (options && options.callback) {
-                   (window as any).turnstileCallback = options.callback;
-                 }
-                 return origRender.apply(this, [ele, options]);
-               };
-               turnstileOverrides = val;
-             }
-           });
+      // Log all API responses for debugging
+      page.on('response', async (response: any) => {
+        const url: string = response.url();
+        if (url.includes('/api/') || url.includes('capsolver') || url.includes('turnstile')) {
+          try {
+            this.logger.log(`[NET] ${response.status()} ${url}`);
+          } catch (e) {}
         }
       });
 
       // ==========================================
-      // STEP 01 - Login Page
+      // STEP 01 - Navigate to Login Page
       // ==========================================
       this.logger.log(`[Step 01] Navigating to Login Page: ${targetUrl}`);
       if (applicationId) await this.updateAppStatus(applicationId, 'Navigating to VFS Login...');
       await page.goto(targetUrl, { waitUntil: 'domcontentloaded' });
-      
-      // Wait for the page to render completely
-      await page.waitForTimeout(5000); 
 
-      this.logger.log(`[Step 01] Taking a screenshot of the login page to check for Cloudflare...`);
+      // Wait for page JS to settle
+      await page.waitForTimeout(6000);
+
       await page.screenshot({ path: '/app/debug-login.png' });
-      this.logger.log(`[Step 01] Screenshot saved to /app/debug-login.png`);
-
       const pageTitle = await page.title();
       this.logger.log(`[Step 01] PAGE TITLE IS: "${pageTitle}"`);
-      
-      // 1. Accept Cookies (force click)
+      this.logger.log(`[Step 01] Screenshot saved to /app/debug-login.png`);
+
+      // Accept cookies
       try {
-        const btn = await page.waitForSelector('button:has-text("Accept All Cookies"), button#onetrust-accept-btn-handler', { timeout: 3000 });
-        if (btn) {
-          await btn.click({ force: true });
-          this.logger.log(`[Step 01] Clicked "Accept All Cookies"`);
+        const cookieBtn = await page.waitForSelector('button:has-text("Accept All Cookies"), #onetrust-accept-btn-handler', { timeout: 4000 });
+        if (cookieBtn) {
+          await cookieBtn.click({ force: true });
+          this.logger.log(`[Step 01] Accepted cookies.`);
+          await page.waitForTimeout(1000);
         }
-      } catch (err) {
-        this.logger.log(`[Step 01] No Cookie popup found or already accepted.`);
+      } catch (_) {
+        this.logger.log(`[Step 01] No cookie banner found.`);
       }
 
-      // Trying standard VFS login selectors
-      const emailSelector = 'input[formcontrolname="username"]:not(.d-none), input#email, input#mat-input-0'; 
-      const passwordSelector = 'input[formcontrolname="password"]:not(.d-none), input#password, input#mat-input-1';
-      const loginBtnSelector = 'button:has-text("Sign in"), button:has-text("Login"), button.mat-raised-button.mat-primary';
+      // ==========================================
+      // STEP 01b - Fill Login Form
+      // ==========================================
+      const emailSelector = 'input[formcontrolname="username"], input#email, input[type="email"]';
+      const passwordSelector = 'input[formcontrolname="password"], input#password, input[type="password"]';
+      const loginBtnSelector = 'button[type="submit"], button:has-text("Sign in"), button:has-text("Login")';
+
+      this.logger.log(`[Step 01] Waiting for form fields...`);
+      await page.waitForSelector(emailSelector, { state: 'visible', timeout: 20000 });
+
+      await page.locator(emailSelector).pressSequentially(vfsEmail, { delay: 80 });
+      await page.keyboard.press('Tab');
+      await page.waitForTimeout(500);
+      this.logger.log(`[Step 01] Entered Email.`);
+      if (applicationId) await this.updateAppStatus(applicationId, 'Entering credentials...');
+
+      await page.locator(passwordSelector).pressSequentially(vfsPassword, { delay: 80 });
+      await page.keyboard.press('Tab');
+      await page.waitForTimeout(500);
+      this.logger.log(`[Step 01] Entered Password.`);
+
+      // DEBUG: log DOM state
+      const domDebug = await page.evaluate(() => {
+        const invalids = Array.from(document.querySelectorAll('.ng-invalid')).map(el =>
+          el.tagName + (el.getAttribute('formcontrolname') ? `[${el.getAttribute('formcontrolname')}]` : '') + ' ' + el.className
+        );
+        const iframes = Array.from(document.querySelectorAll('iframe')).map(f => f.src);
+        const cfEl = document.querySelector('.cf-turnstile, [data-sitekey]');
+        return { invalids, iframes, cfSitekey: cfEl?.getAttribute('data-sitekey') ?? null };
+      });
+      this.logger.log(`[DEBUG] ng-invalid: ${JSON.stringify(domDebug.invalids)}`);
+      this.logger.log(`[DEBUG] iframes: ${JSON.stringify(domDebug.iframes)}`);
+      this.logger.log(`[DEBUG] DOM sitekey: ${domDebug.cfSitekey}`);
+
+      // ==========================================
+      // STEP 01c - Solve Cloudflare Turnstile
+      // ==========================================
+      if (capsolverKey) {
+        if (applicationId) await this.updateAppStatus(applicationId, 'Solving Turnstile via CapSolver...');
+
+        // Prefer DOM sitekey; fallback to hardcoded VFS key
+        const sitekey = domDebug.cfSitekey || VFS_TURNSTILE_SITEKEY;
+        this.logger.log(`[Step 01] Using Turnstile sitekey: ${sitekey} (${domDebug.cfSitekey ? 'from DOM' : 'HARDCODED FALLBACK'})`);
+
+        const token = await this.solveTurnstileWithCapSolver(capsolverKey, targetUrl, sitekey);
+
+        if (token) {
+          this.logger.log(`[Step 01] Injecting Turnstile token into page...`);
+          await page.evaluate((t: string) => {
+            // Method 1: inject hidden input
+            let input = document.querySelector('input[name="cf-turnstile-response"]') as HTMLInputElement;
+            if (!input) {
+              input = document.createElement('input');
+              input.type = 'hidden';
+              input.name = 'cf-turnstile-response';
+              const form = document.querySelector('form');
+              if (form) form.appendChild(input);
+            }
+            input.value = t;
+            input.dispatchEvent(new Event('input', { bubbles: true }));
+            input.dispatchEvent(new Event('change', { bubbles: true }));
+
+            // Method 2: call intercepted callback
+            if (typeof (window as any).__turnstileToken !== 'undefined') {
+              (window as any).__turnstileToken = t;
+            }
+
+            // Method 3: call window.turnstile.execute callback if present
+            try {
+              const widgets = (window as any).__turnstileImpl?._state?.widgets;
+              if (widgets) {
+                Object.values(widgets).forEach((w: any) => {
+                  if (typeof w?.callback === 'function') w.callback(t);
+                });
+              }
+            } catch (_) {}
+          }, token);
+
+          await page.waitForTimeout(2000);
+          this.logger.log(`[Step 01] Token injected. Waiting for Angular to validate...`);
+          
+          // Post-injection DOM check
+          const afterInject = await page.evaluate(() => {
+            return Array.from(document.querySelectorAll('.ng-invalid')).map(el => el.tagName + ' ' + el.className);
+          });
+          this.logger.log(`[DEBUG] After token injection ng-invalid: ${JSON.stringify(afterInject)}`);
+        } else {
+          this.logger.warn(`[Step 01] CapSolver did not return a token.`);
+        }
+      } else {
+        this.logger.log(`[Step 01] No CapSolver key. Waiting 15s for Turnstile auto-solve...`);
+        await page.waitForTimeout(15000);
+      }
+
+      // ==========================================
+      // STEP 01d - Submit Login Form
+      // ==========================================
+      // Remove disabled from all buttons
+      await page.evaluate(() => {
+        document.querySelectorAll('button').forEach(b => b.removeAttribute('disabled'));
+      });
+      await page.waitForTimeout(500);
 
       try {
-        // Wait for form fields to render
-        this.logger.log(`[Step 01] Waiting for form fields to render...`);
-        await page.waitForSelector(emailSelector, { state: 'visible', timeout: 15000 });
-        
-        // Type slowly to trigger Angular validation
-        await page.locator(emailSelector).pressSequentially(vfsEmail, { delay: 100 });
-        await page.keyboard.press('Tab'); // trigger blur
-        this.logger.log(`[Step 01] Entered Email.`);
-        if (applicationId) await this.updateAppStatus(applicationId, 'Entering credentials...');
-        
-        await page.locator(passwordSelector).pressSequentially(vfsPassword, { delay: 100 });
-        await page.keyboard.press('Tab'); // trigger blur
-        this.logger.log(`[Step 01] Entered Password.`);
-
-        await page.keyboard.press('Tab'); // trigger blur
-        this.logger.log(`[Step 01] Entered Password.`);
-
-        // DEBUG: Find exact invalid controls and errors
-        const invalidDebug = await page.evaluate(() => {
-           const invalidEls = Array.from(document.querySelectorAll('.ng-invalid'));
-           const invalidNames = invalidEls.map(el => {
-               return el.tagName.toLowerCase() + (el.getAttribute('formcontrolname') ? `[formcontrolname="${el.getAttribute('formcontrolname')}"]` : '') + ' class: ' + el.className;
-           });
-           
-           const errorEls = Array.from(document.querySelectorAll('mat-error, .c-brand-error, .toast-message, .mat-mdc-form-field-error, app-captcha, .cf-turnstile'));
-           const errorTexts = errorEls.map(el => el.tagName.toLowerCase() + ': ' + (el.textContent || el.innerHTML).trim());
-           
-           return { invalidNames, errorTexts };
-        });
-        this.logger.log(`[DEBUG] Invalid Elements: ${JSON.stringify(invalidDebug.invalidNames)}`);
-        this.logger.log(`[DEBUG] Errors/Captcha tags: ${JSON.stringify(invalidDebug.errorTexts)}`);
-        
-        // DEBUG: Check Angular Context
-        const ngContextStr = await page.evaluate(() => {
-            try {
-                const form = document.querySelector('form');
-                if (!form) return 'No form';
-                if ((window as any).ng) {
-                    const ctx = (window as any).ng.getContext(form);
-                    if (ctx) {
-                        const controls = ctx.loginForm?.controls || ctx.form?.controls;
-                        if (controls) {
-                            return Object.keys(controls).map(k => `${k}:${controls[k].status}`).join(', ');
-                        }
-                    }
-                }
-                return 'ng context not found or no controls';
-            } catch(e: any) {
-                return e.message;
-            }
-        });
-        this.logger.log(`[DEBUG] Angular Form Controls State: ${ngContextStr}`);
-
-        // CHECK IF CAPSOLVER IS CONFIGURED
-        const capsolverKey = process.env.CAPSOLVER_API_KEY;
-        if (capsolverKey) {
-          this.logger.log(`[Step 01] CAPSOLVER_API_KEY found. Attempting to solve Turnstile...`);
-          if (applicationId) await this.updateAppStatus(applicationId, 'Solving Turnstile Captcha...');
-          
-          try {
-            // Find sitekey by waiting for it to render
-            let sitekey = await page.evaluate(async () => {
-               const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
-               for (let i = 0; i < 20; i++) {
-                 // Try finding standard .cf-turnstile div
-                 const cfEl = document.querySelector('.cf-turnstile, [data-sitekey]');
-                 if (cfEl) {
-                   const key = cfEl.getAttribute('data-sitekey');
-                   if (key) return key;
-                 }
-                 
-                 // Try extracting from any Turnstile iframe
-                 const iframes = document.querySelectorAll('iframe');
-                 for (let j = 0; j < iframes.length; j++) {
-                   const src = iframes[j].getAttribute('src');
-                   if (src && src.includes('turnstile')) {
-                     // Look for k=...
-                     const kMatch = src.match(/k=([^&]+)/);
-                     if (kMatch) return kMatch[1];
-                     // Look for typical path structure: /0x4AAAAAAA.../
-                     const pathMatch = src.match(/\/(0x[a-zA-Z0-9_-]+)/);
-                     if (pathMatch) return pathMatch[1];
-                   }
-                 }
-                 await sleep(500);
-               }
-               return null;
-            });
-
-            if (sitekey) {
-               this.logger.log(`[Step 01] Found Turnstile SiteKey: ${sitekey}. Requesting CapSolver...`);
-               const taskPayload = {
-                 clientKey: capsolverKey,
-                 task: {
-                   type: "AntiTurnstileTaskProxyLess",
-                   websiteURL: targetUrl,
-                   websiteKey: sitekey,
-                 }
-               };
-               
-               const createRes = await fetch('https://api.capsolver.com/createTask', {
-                 method: 'POST',
-                 headers: { 'Content-Type': 'application/json' },
-                 body: JSON.stringify(taskPayload)
-               });
-               const createTaskResult = await createRes.json() as any;
-               
-               if (createTaskResult.errorId > 0) {
-                 throw new Error(createTaskResult.errorDescription);
-               }
-               
-               const taskId = createTaskResult.taskId;
-               let solutionToken = null;
-               
-               // Poll for result
-               for (let i = 0; i < 24; i++) { // wait up to 2 mins
-                 await page.waitForTimeout(5000);
-                 const resultRes = await fetch('https://api.capsolver.com/getTaskResult', {
-                   method: 'POST',
-                   headers: { 'Content-Type': 'application/json' },
-                   body: JSON.stringify({ clientKey: capsolverKey, taskId })
-                 });
-                 const result = await resultRes.json() as any;
-                 
-                 if (result.status === 'ready') {
-                   solutionToken = result.solution.token;
-                   break;
-                 } else if (result.status === 'processing') {
-                   this.logger.log(`[Step 01] CapSolver is processing...`);
-                   continue;
-                 } else {
-                   throw new Error(result.errorDescription);
-                 }
-               }
-               
-               if (solutionToken) {
-                 this.logger.log(`[Step 01] CapSolver success! Injecting Turnstile token...`);
-                 await page.evaluate((token: string) => {
-                    let input = document.querySelector('input[name="cf-turnstile-response"]') as HTMLInputElement;
-                    if (!input) {
-                        input = document.createElement('input');
-                        input.type = 'hidden';
-                        input.name = 'cf-turnstile-response';
-                        const form = document.querySelector('form');
-                        if (form) form.appendChild(input);
-                    }
-                    if (input) {
-                      input.value = token;
-                      input.dispatchEvent(new Event('input', { bubbles: true }));
-                      input.dispatchEvent(new Event('change', { bubbles: true }));
-                    }
-                    if (typeof (window as any).turnstileCallback === 'function') {
-                      (window as any).turnstileCallback(token);
-                    }
-                 }, solutionToken);
-                 await page.waitForTimeout(2000); // Give Angular time to react
-               } else {
-                 this.logger.warn(`[Step 01] CapSolver timed out.`);
-               }
-            } else {
-               this.logger.warn(`[Step 01] Could not find Turnstile sitekey in DOM.`);
-            }
-          } catch (capErr: any) {
-            this.logger.error(`[Step 01] CapSolver Error: ${capErr.message}`);
-          }
-        } else {
-          // Wait for Cloudflare Turnstile to auto-solve naturally if no key
-          this.logger.log(`[Step 01] Waiting 10 seconds for Cloudflare Turnstile to auto-solve (No CapSolver Key)...`);
-          await page.waitForTimeout(10000);
-        }
-        
-        // Force remove disabled attributes and click
-        await page.evaluate(() => {
-           document.querySelectorAll('button').forEach(b => b.removeAttribute('disabled'));
-        });
-        await page.waitForTimeout(500);
         await page.click(loginBtnSelector, { force: true });
         this.logger.log(`[Step 01] Clicked Login Button.`);
-        
-        // Fallback: try pressing Enter on the form
+      } catch (_) {
+        this.logger.warn(`[Step 01] Could not click login button — trying Enter key.`);
         await page.keyboard.press('Enter');
-
-        // Ultimate Fallback: Execute Angular login component method directly
-        await page.evaluate(() => {
-            try {
-                const form = document.querySelector('form');
-                if (form && (window as any).ng) {
-                    const ctx = (window as any).ng.getContext(form);
-                    if (ctx) {
-                        if (typeof ctx.login === 'function') ctx.login();
-                        else if (typeof ctx.submit === 'function') ctx.submit();
-                        else if (typeof ctx.onSubmit === 'function') ctx.onSubmit();
-                    }
-                }
-            } catch(e) {}
-        });
-        
-        // OPTIMIZATION: Wait for network to be idle after login, then save session
-        await page.waitForTimeout(5000);
-        await context.storageState({ path: '/app/vfs-session.json' });
-        this.logger.log(`[Step 01] Saved browser session for faster future logins!`);
-      } catch (err) {
-        this.logger.warn(`[Step 01] Could not find login fields automatically. Check if Turnstile is active.`);
-        const hasTurnstile = await page.$('iframe[src*="cloudflare"]');
-        if (hasTurnstile) {
-           this.logger.warn(`[Step 01] CLOUDFLARE TURNSTILE DETECTED! We need a captcha solver.`);
-           if (applicationId) await this.updateAppStatus(applicationId, 'Blocked by Cloudflare Turnstile');
-        }
-        const pageHtml = await page.evaluate(() => document.body.innerHTML);
-        this.logger.log(`[DEBUG] Page HTML snippet: ${pageHtml.substring(0, 3000)}...`);
-        await page.screenshot({ path: '/app/debug-login-failed.png' });
-        this.logger.log(`[DEBUG] Failed screenshot saved to /app/debug-login-failed.png`);
       }
 
+      await page.waitForTimeout(6000);
+      await page.screenshot({ path: '/app/debug-after-login.png' });
+      this.logger.log(`[Step 01] Post-login screenshot saved to /app/debug-after-login.png`);
+
+      // Save session cookies
+      await context.storageState({ path: '/app/vfs-session.json' });
+      this.logger.log(`[Step 01] Browser session saved.`);
+
       // ==========================================
-      // STEP 02 - Dashboard
+      // STEP 02 - Wait for Dashboard
       // ==========================================
       this.logger.log(`[Step 02] Waiting for Dashboard...`);
-      if (applicationId) await this.updateAppStatus(applicationId, 'Solving Captcha / Waiting for Dashboard...');
-      const newBookingBtn = 'button:has-text("Start New Booking")';
+      if (applicationId) await this.updateAppStatus(applicationId, 'Waiting for Dashboard...');
       try {
-        await page.waitForSelector(newBookingBtn, { timeout: 45000 });
-        await page.click(newBookingBtn);
-        this.logger.log(`[Step 02] Clicked "Start New Booking"`);
+        await page.waitForSelector('button:has-text("Start New Booking")', { timeout: 45000 });
+        await page.click('button:has-text("Start New Booking")');
+        this.logger.log(`[Step 02] ✅ Logged in! Clicked "Start New Booking"`);
         if (applicationId) await this.updateAppStatus(applicationId, 'Logged In Successfully!');
-      } catch (err) {
-        this.logger.warn(`[Step 02] Could not find "Start New Booking". Stuck on Cloudflare or Loading?`);
-        const pageTitle2 = await page.title();
-        const pageHtml2 = await page.evaluate(() => document.body.innerHTML);
-        this.logger.log(`[DEBUG-STEP-2] PAGE TITLE: "${pageTitle2}"`);
-        this.logger.log(`[DEBUG-STEP-2] HTML snippet: ${pageHtml2.substring(0, 3000)}...`);
+      } catch (_) {
+        const title2 = await page.title();
+        const html2 = await page.evaluate(() => document.body.innerHTML);
+        this.logger.warn(`[Step 02] Dashboard not found. Page title: "${title2}"`);
+        this.logger.log(`[DEBUG-STEP-2] HTML: ${html2.substring(0, 3000)}`);
         await page.screenshot({ path: '/app/debug-dashboard-failed.png' });
+        if (applicationId) await this.updateAppStatus(applicationId, `Login failed — stuck at: ${title2}`);
       }
-      
-      // ==========================================
-      // STEP 03 - Applicant Details / Category Selection
-      // ==========================================
-      this.logger.log(`[Step 03] Category Selection (Visa Center, Category, Sub-Category)...`);
-      // TODO: Dynamic selection based on database configuration
-      
-      // ==========================================
-      // STEP 04 - Date Availability
-      // ==========================================
-      this.logger.log(`[Step 04] Checking Date Availability / Applying Push Mechanism...`);
-      
-      // ==========================================
-      // STEP 05 - Applicant Details / Passport Upload
-      // ==========================================
-      this.logger.log(`[Step 05] Processing Applicant Details...`);
-      
-      // ==========================================
-      // STEP 06 - Face Verification
-      // ==========================================
-      this.logger.log(`[Step 06] Reached Face Verification. Virtual Camera will auto-inject media if configured.`);
-      
-      // ==========================================
-      // STEP 07 - Booking Appointment Page
-      // ==========================================
-      this.logger.log(`[Step 07] Booking Date and Time Slot...`);
 
       // ==========================================
-      // STEP 08 - Service Page
+      // STEP 03..11 — Booking flow (TODO)
       // ==========================================
-      this.logger.log(`[Step 08] Processing Additional Services...`);
+      this.logger.log(`[Step 03] Category Selection... (TODO)`);
+      this.logger.log(`[Step 04] Date Availability... (TODO)`);
+      this.logger.log(`[Step 05] Applicant Details... (TODO)`);
+      this.logger.log(`[Step 06] Face Verification... (TODO)`);
+      this.logger.log(`[Step 07] Date/Time Slot... (TODO)`);
+      this.logger.log(`[Step 08] Additional Services... (TODO)`);
+      this.logger.log(`[Step 09&10] Review & Final Review... (TODO)`);
+      this.logger.log(`[Step 11] Payment/Completion... (TODO)`);
 
-      // ==========================================
-      // STEP 09 & 10 - Review Page & Final Review
-      // ==========================================
-      this.logger.log(`[Step 09 & 10] Checking Terms & Conditions and Final Review...`);
-
-      // ==========================================
-      // STEP 11 - Payment / Completion
-      // ==========================================
-      this.logger.log(`[Step 11] Waiting for Booking Completion / Payment Page...`);
-
-      // ------------------------------------------
-      // Keeping browser open for local review
-      // ------------------------------------------
-      this.logger.log(`[TESTING] Keeping browser open for 5 minutes so you can inspect the flow...`);
+      this.logger.log(`[TESTING] Keeping browser open for 5 minutes for inspection...`);
       if (applicationId) await this.updateAppStatus(applicationId, 'Waiting (Inspect Browser)...');
-      await page.waitForTimeout(300000); 
-      
+      await page.waitForTimeout(300000);
+
       return true;
     } catch (error: any) {
       this.logger.error(`VFS Automation failed: ${error.message}`, error.stack);
-      if (applicationId) await this.updateAppStatus(applicationId, 'Failed / Blocked by Captcha');
+      if (applicationId) await this.updateAppStatus(applicationId, 'Failed / Error');
       return false;
     } finally {
       if (browser) {
-        // We will keep this commented out or managed via environment variable later so the browser doesn't close instantly on error
-        await browser.close(); 
-        this.logger.log(`Browser execution finished.`);
+        await browser.close();
+        this.logger.log(`Browser closed.`);
         if (applicationId) await this.updateAppStatus(applicationId, 'Finished');
       }
     }
