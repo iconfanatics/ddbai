@@ -103,6 +103,17 @@ export class VfsAutomationService {
       });
 
       const page = await context.newPage();
+      
+      // LOG API RESPONSES
+      page.on('response', async (response) => {
+         if (response.url().includes('/api/')) {
+             try {
+                this.logger.log(`[API RESPONSE] ${response.url()} : ${response.status()}`);
+                const text = await response.text();
+                this.logger.log(`[API BODY] ${text.substring(0, 500)}`);
+             } catch (e) {}
+         }
+      });
 
       // Ensure we inject a script to intercept turnstile callback just in case CapSolver is used
       await page.addInitScript(() => {
@@ -174,6 +185,9 @@ export class VfsAutomationService {
         await page.keyboard.press('Tab'); // trigger blur
         this.logger.log(`[Step 01] Entered Password.`);
 
+        await page.keyboard.press('Tab'); // trigger blur
+        this.logger.log(`[Step 01] Entered Password.`);
+
         // DEBUG: Find exact invalid controls and errors
         const invalidDebug = await page.evaluate(() => {
            const invalidEls = Array.from(document.querySelectorAll('.ng-invalid'));
@@ -188,8 +202,28 @@ export class VfsAutomationService {
         });
         this.logger.log(`[DEBUG] Invalid Elements: ${JSON.stringify(invalidDebug.invalidNames)}`);
         this.logger.log(`[DEBUG] Errors/Captcha tags: ${JSON.stringify(invalidDebug.errorTexts)}`);
-
         
+        // DEBUG: Check Angular Context
+        const ngContextStr = await page.evaluate(() => {
+            try {
+                const form = document.querySelector('form');
+                if (!form) return 'No form';
+                if ((window as any).ng) {
+                    const ctx = (window as any).ng.getContext(form);
+                    if (ctx) {
+                        const controls = ctx.loginForm?.controls || ctx.form?.controls;
+                        if (controls) {
+                            return Object.keys(controls).map(k => `${k}:${controls[k].status}`).join(', ');
+                        }
+                    }
+                }
+                return 'ng context not found or no controls';
+            } catch(e: any) {
+                return e.message;
+            }
+        });
+        this.logger.log(`[DEBUG] Angular Form Controls State: ${ngContextStr}`);
+
         // CHECK IF CAPSOLVER IS CONFIGURED
         const capsolverKey = process.env.CAPSOLVER_API_KEY;
         if (capsolverKey) {
@@ -318,6 +352,21 @@ export class VfsAutomationService {
         
         // Fallback: try pressing Enter on the form
         await page.keyboard.press('Enter');
+
+        // Ultimate Fallback: Execute Angular login component method directly
+        await page.evaluate(() => {
+            try {
+                const form = document.querySelector('form');
+                if (form && (window as any).ng) {
+                    const ctx = (window as any).ng.getContext(form);
+                    if (ctx) {
+                        if (typeof ctx.login === 'function') ctx.login();
+                        else if (typeof ctx.submit === 'function') ctx.submit();
+                        else if (typeof ctx.onSubmit === 'function') ctx.onSubmit();
+                    }
+                }
+            } catch(e) {}
+        });
         
         // OPTIMIZATION: Wait for network to be idle after login, then save session
         await page.waitForTimeout(5000);
