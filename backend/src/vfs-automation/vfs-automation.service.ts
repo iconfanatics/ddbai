@@ -348,18 +348,82 @@ export class VfsAutomationService {
       await page.waitForTimeout(500);
       this.logger.log(`[Step 01] Entered Password.`);
 
-      // DEBUG: log DOM state
+      // ================================================================
+      // DEEP SCAN: Find sitekey from DOM, scripts, and iframe sources
+      // ================================================================
       const domDebug = await page.evaluate(() => {
         const invalids = Array.from(document.querySelectorAll('.ng-invalid')).map(el =>
           el.tagName + (el.getAttribute('formcontrolname') ? `[${el.getAttribute('formcontrolname')}]` : '') + ' ' + el.className
         );
-        const iframes = Array.from(document.querySelectorAll('iframe')).map(f => f.src);
+
+        // Wait-free iframe scan including contentWindow
+        const iframes = Array.from(document.querySelectorAll('iframe')).map(f => ({
+          src: f.src,
+          name: f.name,
+          id: f.id,
+        }));
+
+        // DOM sitekey from standard elements
         const cfEl = document.querySelector('.cf-turnstile, [data-sitekey]');
-        return { invalids, iframes, cfSitekey: cfEl?.getAttribute('data-sitekey') ?? null };
+        const cfSitekey = cfEl?.getAttribute('data-sitekey') ?? null;
+
+        // Scan all inline scripts for 0x4... pattern (Turnstile sitekey format)
+        const scriptKeys: string[] = [];
+        document.querySelectorAll('script:not([src])').forEach(s => {
+          const matches = (s.textContent || '').matchAll(/0x4[a-zA-Z0-9_-]{8,}/g);
+          for (const m of matches) scriptKeys.push(m[0]);
+        });
+
+        // Scan all script src URLs
+        const scriptSrcs = Array.from(document.querySelectorAll('script[src]')).map(s => (s as HTMLScriptElement).src);
+
+        // Scan app-captcha component attributes
+        const captchaEl = document.querySelector('app-captcha');
+        const captchaHtml = captchaEl ? captchaEl.outerHTML.substring(0, 500) : null;
+
+        // Scan all elements with sitekey-related attributes
+        const allSitekeys: string[] = [];
+        document.querySelectorAll('[sitekey], [data-sitekey], [ng-reflect-site-key]').forEach(el => {
+          ['sitekey', 'data-sitekey', 'ng-reflect-site-key'].forEach(attr => {
+            const v = el.getAttribute(attr);
+            if (v) allSitekeys.push(v);
+          });
+        });
+
+        return { invalids, iframes, cfSitekey, scriptKeys, allSitekeys, captchaHtml, scriptSrcs };
       });
+
       this.logger.log(`[DEBUG] ng-invalid: ${JSON.stringify(domDebug.invalids)}`);
       this.logger.log(`[DEBUG] iframes: ${JSON.stringify(domDebug.iframes)}`);
       this.logger.log(`[DEBUG] DOM sitekey: ${domDebug.cfSitekey}`);
+      this.logger.log(`[DEBUG] allSitekeys: ${JSON.stringify(domDebug.allSitekeys)}`);
+      this.logger.log(`[DEBUG] inline script keys: ${JSON.stringify(domDebug.scriptKeys)}`);
+      this.logger.log(`[DEBUG] app-captcha: ${domDebug.captchaHtml}`);
+      this.logger.log(`[DEBUG] script srcs (first 5): ${JSON.stringify(domDebug.scriptSrcs.slice(0, 5))}`);
+
+      // Poll iframe src for up to 5s (it may populate after JS executes)
+      let iframeSitekey: string | null = null;
+      for (let i = 0; i < 10; i++) {
+        await page.waitForTimeout(500);
+        iframeSitekey = await page.evaluate(() => {
+          const iframes = document.querySelectorAll('iframe');
+          for (const f of iframes) {
+            if (!f.src) continue;
+            // sitekey is in URL path like /0x4.../
+            const m = f.src.match(/\/(0x4[a-zA-Z0-9_-]+)\//);
+            if (m) return m[1];
+            // or as query param k=0x4...
+            const u = new URL(f.src);
+            const k = u.searchParams.get('k') || u.searchParams.get('sitekey');
+            if (k) return k;
+          }
+          return null;
+        });
+        if (iframeSitekey) {
+          this.logger.log(`[DEBUG] 🔑 Found sitekey in iframe src: ${iframeSitekey}`);
+          break;
+        }
+      }
 
       // ==========================================
       // STEP 01c - Solve Cloudflare Turnstile
@@ -376,9 +440,9 @@ export class VfsAutomationService {
           }
         }
 
-        // Priority: 1) network-captured  2) DOM attribute  3) hardcoded fallback
-        const sitekey = capturedSitekey || domDebug.cfSitekey || VFS_TURNSTILE_SITEKEY;
-        const skSource = capturedSitekey ? 'from NETWORK ✅' : (domDebug.cfSitekey ? 'from DOM' : 'HARDCODED FALLBACK ⚠️');
+        // Priority: 1) network  2) iframe src  3) inline script  4) DOM attr  5) hardcoded
+        const sitekey = capturedSitekey || iframeSitekey || domDebug.scriptKeys[0] || domDebug.cfSitekey || VFS_TURNSTILE_SITEKEY;
+        const skSource = capturedSitekey ? 'NETWORK ✅' : iframeSitekey ? 'IFRAME ✅' : domDebug.scriptKeys[0] ? 'SCRIPT ✅' : domDebug.cfSitekey ? 'DOM' : 'HARDCODED ⚠️';
         this.logger.log(`[Step 01] Using Turnstile sitekey: ${sitekey} (${skSource})`);
 
         const token = await this.solveTurnstileWithCapSolver(capsolverKey, targetUrl, sitekey);
