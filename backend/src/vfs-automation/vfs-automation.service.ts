@@ -90,7 +90,7 @@ export class VfsAutomationService {
       chromium.use(stealth);
 
       browser = await chromium.launch({
-        headless: true, // SET TO TRUE for Ubuntu VPS
+        headless: false, // Run headful to evade Cloudflare Turnstile bot detection
         proxy: proxyConfig,
         args: launchArgs,
       });
