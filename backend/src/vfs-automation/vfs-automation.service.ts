@@ -30,12 +30,13 @@ export class VfsAutomationService {
 
     try {
       this.logger.log('[Proxy] Fetching random proxy from Webshare API...');
-      const res = await fetch('https://proxy.webshare.io/api/v2/proxy/list/?mode=direct&page=1&page_size=25', {
+      const res = await fetch('https://proxy.webshare.io/api/v2/proxy/list/?mode=direct&page=1&page_size=25&country_code__in=DE,NL,FR,GB,US', {
         headers: {
           'Authorization': `Token ${webshareApiKey}`,
         },
       });
       const data = await res.json() as any;
+      this.logger.log(`[Proxy] Webshare API returned ${data?.count ?? 0} total proxies, ${data?.results?.length ?? 0} in this page.`);
       const proxies: any[] = data.results || [];
 
       if (proxies.length === 0) {
@@ -313,8 +314,8 @@ export class VfsAutomationService {
       // ==========================================
       // STEP 01b - Fill Login Form
       // ==========================================
-      const emailSelector = 'input[formcontrolname="username"], input#email, input[type="email"]';
-      const passwordSelector = 'input[formcontrolname="password"], input#password, input[type="password"]';
+      const emailSelector = 'input[formcontrolname="username"]:not(.d-none), input#email:not(.d-none)';
+      const passwordSelector = 'input[formcontrolname="password"]:not(.d-none)';
       const loginBtnSelector = 'button[type="submit"], button:has-text("Sign in"), button:has-text("Login")';
 
       this.logger.log(`[Step 01] Waiting for form fields...`);
