@@ -8,7 +8,7 @@ import { PrismaService } from '../prisma/prisma.service.js';
 // This key is static for the VFS BGD→PRT login page.
 // Update if VFS changes it (check network tab for challenges.cloudflare.com requests)
 // ============================================================
-const VFS_TURNSTILE_SITEKEY = process.env.VFS_TURNSTILE_SITEKEY || '0x4AAAAAAAc5-scBJxJSPOkH';
+const VFS_TURNSTILE_SITEKEY = process.env.VFS_TURNSTILE_SITEKEY || '0x4AAAAAAAAjq6WYeRDKmebM';
 
 @Injectable()
 export class VfsAutomationService {
@@ -30,13 +30,13 @@ export class VfsAutomationService {
 
     try {
       this.logger.log('[Proxy] Fetching random proxy from Webshare API...');
-      const res = await fetch('https://proxy.webshare.io/api/v2/proxy/list/?mode=direct&page=1&page_size=25', {
+      const res = await fetch('https://proxy.webshare.io/api/v2/proxy/list/?page=1&page_size=100', {
         headers: {
           'Authorization': `Token ${webshareApiKey}`,
         },
       });
       const data = await res.json() as any;
-      this.logger.log(`[Proxy] Webshare API returned ${data?.count ?? 0} total proxies, ${data?.results?.length ?? 0} in this page.`);
+      this.logger.log(`[Proxy] Webshare API response: count=${data?.count ?? 0}, results=${data?.results?.length ?? 0}`);
       const proxies: any[] = data.results || [];
 
       if (proxies.length === 0) {
@@ -63,25 +63,35 @@ export class VfsAutomationService {
     capsolverKey: string,
     websiteURL: string,
     sitekey: string,
+    userAgent?: string,
   ): Promise<string | null> {
-    this.logger.log(`[CapSolver] Creating Turnstile task for sitekey: ${sitekey}`);
+    this.logger.log(`[CapSolver] Creating Turnstile task for sitekey: ${sitekey} on ${websiteURL}`);
+
+    const payload: any = {
+      clientKey: capsolverKey,
+      task: {
+        type: 'AntiTurnstileTaskProxyLess',
+        websiteURL,
+        websiteKey: sitekey,
+        metadata: {
+          action: 'login',
+        },
+      },
+    };
+
+    if (userAgent) {
+      payload.task.userAgent = userAgent;
+    }
 
     const createRes = await fetch('https://api.capsolver.com/createTask', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        clientKey: capsolverKey,
-        task: {
-          type: 'AntiTurnstileTaskProxyLess',
-          websiteURL,
-          websiteKey: sitekey,
-        },
-      }),
+      body: JSON.stringify(payload),
     });
     const createResult = await createRes.json() as any;
 
     if (createResult.errorId > 0) {
-      this.logger.error(`[CapSolver] Task creation failed: ${createResult.errorDescription}`);
+      this.logger.error(`[CapSolver] Task creation failed: ${createResult.errorDescription} (${createResult.errorCode})`);
       return null;
     }
 
@@ -99,12 +109,12 @@ export class VfsAutomationService {
       const result = await resultRes.json() as any;
 
       if (result.status === 'ready') {
-        this.logger.log(`[CapSolver] ✅ Token received!`);
-        return result.solution.token as string;
+        this.logger.log(`[CapSolver] ✅ Token received successfully!`);
+        return result.solution?.token as string;
       } else if (result.status === 'processing') {
         this.logger.log(`[CapSolver] Still processing... (attempt ${i + 1}/24)`);
       } else {
-        this.logger.error(`[CapSolver] Error: ${result.errorDescription}`);
+        this.logger.error(`[CapSolver] Error: ${result.errorDescription || JSON.stringify(result)}`);
         return null;
       }
     }
@@ -228,6 +238,18 @@ export class VfsAutomationService {
         this.logger.log(`[Step 00] Connected Proxy IP: ${proxyIp}`);
       } catch (e) {
         this.logger.warn(`[Step 00] Could not fetch IP (Proxy might be slow or blocked).`);
+      }
+
+      if (applicationId && proxyIp && proxyIp !== 'Local/Direct') {
+        try {
+          await this.prisma.application.update({
+            where: { id: applicationId },
+            data: { proxy: proxyIp },
+          });
+          this.logger.log(`[Step 00] Saved Connected Proxy IP ${proxyIp} to Application ${applicationId}`);
+        } catch (dbErr: any) {
+          this.logger.warn(`[Step 00] Failed to update Application proxy in DB: ${dbErr?.message}`);
+        }
       }
 
       let capBalance = 'N/A';
@@ -456,7 +478,12 @@ export class VfsAutomationService {
         if (token) {
           this.logger.log(`[Step 01] ✅ Turnstile auto-solved! Token already captured from initScript.`);
         } else {
-          token = await this.solveTurnstileWithCapSolver(capsolverKey, targetUrl, sitekey);
+          token = await this.solveTurnstileWithCapSolver(
+            capsolverKey,
+            targetUrl,
+            sitekey,
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36'
+          );
         }
 
         if (token) {

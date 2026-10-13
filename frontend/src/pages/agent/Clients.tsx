@@ -563,7 +563,19 @@ export default function Clients() {
                       </span>
                     </div>
                   </td>
-                  <td className="px-4 py-4 text-gray-700 font-medium">System (API)</td>
+                  <td className="px-4 py-4">
+                    <div className="font-medium text-xs text-gray-800">System (API)</div>
+                    <div className="mt-1 flex items-center gap-1.5">
+                      {app.proxy ? (
+                        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-mono font-medium bg-emerald-50 text-emerald-700 border border-emerald-200" title={`Connected Proxy: ${app.proxy}`}>
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-1 animate-pulse"></span>
+                          {app.proxy}
+                        </span>
+                      ) : (
+                        <span className="text-[10px] text-gray-400 italic">No Proxy IP</span>
+                      )}
+                    </div>
+                  </td>
                   <td className="px-4 py-4 text-xs text-gray-500">
                     <div className="font-semibold text-gray-700">Center: {app.applicationCenter || 'N/A'}</div>
                     <div>Category: {app.category || 'N/A'}</div>

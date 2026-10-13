@@ -309,7 +309,8 @@ export class ApplicationsService {
           application.vfsPassword || '',
           application.proxy || '',
           videoPath,
-          // You can dynamically fetch targetUrl based on application.routeId here
+          'https://visa.vfsglobal.com/bgd/en/prt/login',
+          application.id
         );
 
         if (!success) {
