@@ -8,7 +8,7 @@ import { PrismaService } from '../prisma/prisma.service.js';
 // This key is static for the VFS BGD→PRT login page.
 // Update if VFS changes it (check network tab for challenges.cloudflare.com requests)
 // ============================================================
-const VFS_TURNSTILE_SITEKEY = process.env.VFS_TURNSTILE_SITEKEY || '0x4AAAAAAAAjq6WYeRDKmebM';
+const VFS_TURNSTILE_SITEKEY = process.env.VFS_TURNSTILE_SITEKEY || '0x4AAAAAAACYaM3U_Dz-4DN1';
 
 @Injectable()
 export class VfsAutomationService {
@@ -30,14 +30,27 @@ export class VfsAutomationService {
 
     try {
       this.logger.log('[Proxy] Fetching random proxy from Webshare API...');
-      const res = await fetch('https://proxy.webshare.io/api/v2/proxy/list/?page=1&page_size=100', {
+      // 1st attempt: mode=backbone (for Residential / Backbone packages)
+      let res = await fetch('https://proxy.webshare.io/api/v2/proxy/list/?mode=backbone&page=1&page_size=100', {
         headers: {
           'Authorization': `Token ${webshareApiKey}`,
         },
       });
-      const data = await res.json() as any;
-      this.logger.log(`[Proxy] Webshare API response: count=${data?.count ?? 0}, results=${data?.results?.length ?? 0}`);
-      const proxies: any[] = data.results || [];
+      let data = await res.json() as any;
+      let proxies: any[] = data.results || [];
+
+      // 2nd attempt: general list without mode filter if backbone returned empty
+      if (proxies.length === 0) {
+        res = await fetch('https://proxy.webshare.io/api/v2/proxy/list/?page=1&page_size=100', {
+          headers: {
+            'Authorization': `Token ${webshareApiKey}`,
+          },
+        });
+        data = await res.json() as any;
+        proxies = data.results || [];
+      }
+
+      this.logger.log(`[Proxy] Webshare API response: count=${data?.count ?? 0}, results=${proxies.length}`);
 
       if (proxies.length === 0) {
         this.logger.warn('[Proxy] No proxies returned from Webshare API. Using static proxy.');
@@ -47,7 +60,7 @@ export class VfsAutomationService {
       // Pick a random proxy from the list
       const randomProxy = proxies[Math.floor(Math.random() * proxies.length)];
       const proxyUrl = `http://${randomProxy.username}:${randomProxy.password}@${randomProxy.proxy_address}:${randomProxy.port}`;
-      this.logger.log(`[Proxy] Selected random Webshare proxy: ${randomProxy.proxy_address}:${randomProxy.port}`);
+      this.logger.log(`[Proxy] Selected random Webshare proxy: ${randomProxy.proxy_address}:${randomProxy.port} (${randomProxy.username})`);
       return proxyUrl;
     } catch (e: any) {
       this.logger.warn(`[Proxy] Failed to fetch from Webshare API: ${e.message}. Falling back to static proxy.`);
@@ -73,9 +86,6 @@ export class VfsAutomationService {
         type: 'AntiTurnstileTaskProxyLess',
         websiteURL,
         websiteKey: sitekey,
-        metadata: {
-          action: 'login',
-        },
       },
     };
 
@@ -321,9 +331,15 @@ export class VfsAutomationService {
       // Log all Turnstile/API network responses for debugging
       page.on('response', async (response: any) => {
         const url: string = response.url();
-        if (url.includes('/api/') || url.includes('capsolver') || url.includes('turnstile') || url.includes('cloudflare')) {
+        if (url.includes('/api/') || url.includes('capsolver') || url.includes('turnstile') || url.includes('cloudflare') || url.includes('auth') || url.includes('login')) {
           try {
             this.logger.log(`[NET] ${response.status()} ${url}`);
+            if (url.includes('/api/') || url.includes('auth') || url.includes('login')) {
+              try {
+                const body = await response.text();
+                this.logger.log(`[NET-BODY] ${body.substring(0, 300)}`);
+              } catch (_) {}
+            }
           } catch (e) {}
         }
       });
@@ -554,6 +570,18 @@ export class VfsAutomationService {
       await page.waitForTimeout(6000);
       await page.screenshot({ path: '/app/debug-after-login.png' });
       this.logger.log(`[Step 01] Post-login screenshot saved to /app/debug-after-login.png`);
+
+      const pageErrors = await page.evaluate(() => {
+        const errors: string[] = [];
+        document.querySelectorAll('mat-error, .c-brand-error, .alert, .toast-message, app-notification, .error-message').forEach(el => {
+          const txt = el.textContent?.trim();
+          if (txt) errors.push(txt);
+        });
+        return errors;
+      });
+      if (pageErrors.length > 0) {
+        this.logger.warn(`[Step 01] Page alerts/errors: ${JSON.stringify(pageErrors)}`);
+      }
 
       // Save session cookies
       await context.storageState({ path: '/app/vfs-session.json' });
