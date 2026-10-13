@@ -59,8 +59,10 @@ export class VfsAutomationService {
 
       // Pick a random proxy from the list
       const randomProxy = proxies[Math.floor(Math.random() * proxies.length)];
-      const proxyUrl = `http://${randomProxy.username}:${randomProxy.password}@${randomProxy.proxy_address}:${randomProxy.port}`;
-      this.logger.log(`[Proxy] Selected random Webshare proxy: ${randomProxy.proxy_address}:${randomProxy.port} (${randomProxy.username})`);
+      const host = randomProxy.proxy_address || 'p.webshare.io';
+      const port = randomProxy.port || 80;
+      const proxyUrl = `http://${randomProxy.username}:${randomProxy.password}@${host}:${port}`;
+      this.logger.log(`[Proxy] Selected random Webshare proxy: ${host}:${port} (${randomProxy.username})`);
       return proxyUrl;
     } catch (e: any) {
       this.logger.warn(`[Proxy] Failed to fetch from Webshare API: ${e.message}. Falling back to static proxy.`);
