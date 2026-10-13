@@ -30,8 +30,8 @@ export class VfsAutomationService {
 
     try {
       this.logger.log('[Proxy] Fetching random proxy from Webshare API...');
-      // 1st attempt: mode=backbone (for Residential / Backbone packages)
-      let res = await fetch('https://proxy.webshare.io/api/v2/proxy/list/?mode=backbone&page=1&page_size=100', {
+      // 1st attempt: fast country residential proxies (UAE, Europe, US)
+      let res = await fetch('https://proxy.webshare.io/api/v2/proxy/list/?mode=backbone&page=1&page_size=100&country_code__in=AE,US,GB,DE,NL,FR', {
         headers: {
           'Authorization': `Token ${webshareApiKey}`,
         },
@@ -39,9 +39,9 @@ export class VfsAutomationService {
       let data = await res.json() as any;
       let proxies: any[] = data.results || [];
 
-      // 2nd attempt: general list without mode filter if backbone returned empty
+      // 2nd attempt: any backbone proxy if fast country list is empty
       if (proxies.length === 0) {
-        res = await fetch('https://proxy.webshare.io/api/v2/proxy/list/?page=1&page_size=100', {
+        res = await fetch('https://proxy.webshare.io/api/v2/proxy/list/?mode=backbone&page=1&page_size=100', {
           headers: {
             'Authorization': `Token ${webshareApiKey}`,
           },
@@ -350,8 +350,11 @@ export class VfsAutomationService {
       // STEP 01 - Navigate to Login Page
       // ==========================================
       this.logger.log(`[Step 01] Navigating to Login Page: ${targetUrl}`);
-      if (applicationId) await this.updateAppStatus(applicationId, 'Navigating to VFS Login...');
-      await page.goto(targetUrl, { waitUntil: 'domcontentloaded' });
+      try {
+        await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 45000 });
+      } catch (navErr: any) {
+        this.logger.warn(`[Step 01] Navigation notice: ${navErr.message}. Checking if page loaded...`);
+      }
 
       // Wait for page JS to settle
       await page.waitForTimeout(6000);
