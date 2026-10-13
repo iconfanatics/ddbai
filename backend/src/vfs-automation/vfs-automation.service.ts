@@ -305,6 +305,20 @@ export class VfsAutomationService {
       page.on('console', msg => {
         const text = msg.text();
         const type = msg.type();
+        // Filter noisy/irrelevant sandbox and analytics errors
+        if (
+          text.includes('about:blank') ||
+          text.includes('allow-scripts') ||
+          text.includes('sandboxed') ||
+          text.includes('dynatrace') ||
+          text.includes('ruxit') ||
+          text.includes('clarity') ||
+          text.includes('Cookiebot') ||
+          text.includes('OneTrust') ||
+          text.includes('Failed to execute \'write\' on \'Document\'')
+        ) {
+          return;
+        }
         if (
           type === 'error' ||
           type === 'warning' ||
@@ -317,11 +331,20 @@ export class VfsAutomationService {
         }
       });
       page.on('pageerror', err => {
-        this.logger.warn(`[PAGE-ERROR] ${err.message}`);
+        if (!err.message.includes('about:blank')) {
+          this.logger.warn(`[PAGE-ERROR] ${err.message}`);
+        }
       });
 
       // Safe non-tampering interceptor to capture Turnstile render callback and options
+      // Restrict strictly to top-level window (never execute in sandboxed child iframes)
       await page.addInitScript(() => {
+        try {
+          if (window !== window.top) return;
+        } catch (_) {
+          return;
+        }
+
         (window as any).__vfsTurnstileCallback = null;
         (window as any).__vfsTurnstileOptions = null;
         (window as any).__vfsTurnstileContainer = null;
@@ -366,12 +389,16 @@ export class VfsAutomationService {
           });
         } catch (_) {}
 
-        // Fallback polling interval in case it was set directly
-        setInterval(() => {
+        // Fallback polling interval (clean up once hooked or after 30s)
+        let pollCount = 0;
+        const hookTimer = setInterval(() => {
+          pollCount++;
           if ((window as any).turnstile && !(window as any).turnstile.__vfsHooked) {
             hookTurnstileObj((window as any).turnstile);
+            clearInterval(hookTimer);
           }
-        }, 10);
+          if (pollCount > 300) clearInterval(hookTimer);
+        }, 100);
       });
 
       // =========================================================
