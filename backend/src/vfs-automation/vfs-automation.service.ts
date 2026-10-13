@@ -305,12 +305,73 @@ export class VfsAutomationService {
       page.on('console', msg => {
         const text = msg.text();
         const type = msg.type();
-        if (type === 'error' || text.toLowerCase().includes('turnstile') || text.toLowerCase().includes('captcha') || text.toLowerCase().includes('fail')) {
+        if (
+          type === 'error' ||
+          type === 'warning' ||
+          text.toLowerCase().includes('turnstile') ||
+          text.toLowerCase().includes('captcha') ||
+          text.toLowerCase().includes('fail') ||
+          text.includes('CAPTURED')
+        ) {
           this.logger.log(`[PAGE-CONSOLE:${type}] ${text}`);
         }
       });
       page.on('pageerror', err => {
         this.logger.warn(`[PAGE-ERROR] ${err.message}`);
+      });
+
+      // Safe non-tampering interceptor to capture Turnstile render callback and options
+      await page.addInitScript(() => {
+        (window as any).__vfsTurnstileCallback = null;
+        (window as any).__vfsTurnstileOptions = null;
+        (window as any).__vfsTurnstileContainer = null;
+        (window as any).__vfsRenderCalls = [];
+
+        function hookTurnstileObj(tObj: any) {
+          if (!tObj || tObj.__vfsHooked) return tObj;
+          const origRender = tObj.render;
+          if (typeof origRender === 'function') {
+            tObj.render = function (c: any, opt: any) {
+              try {
+                const cDesc = typeof c === 'string' ? c : (c?.id ? `#${c.id}` : (c?.tagName || 'DOM_ELEMENT'));
+                console.warn(`[CAPTURED-TURNSTILE-RENDER] Container: ${cDesc}, Options: ${JSON.stringify(opt)}`);
+                (window as any).__vfsTurnstileContainer = c;
+                (window as any).__vfsTurnstileOptions = opt;
+                (window as any).__vfsRenderCalls.push({ container: c, options: opt });
+                if (opt && typeof opt.callback === 'function') {
+                  (window as any).__vfsTurnstileCallback = opt.callback;
+                }
+              } catch (e: any) {
+                console.warn('[CAPTURED-TURNSTILE-ERROR] ' + e.message);
+              }
+              return origRender.apply(this, arguments);
+            };
+            tObj.__vfsHooked = true;
+          }
+          return tObj;
+        }
+
+        // Intercept via getter/setter on window.turnstile
+        let _turnstile: any = (window as any).turnstile;
+        try {
+          Object.defineProperty(window, 'turnstile', {
+            configurable: true,
+            enumerable: true,
+            get() {
+              return _turnstile;
+            },
+            set(val) {
+              _turnstile = hookTurnstileObj(val);
+            },
+          });
+        } catch (_) {}
+
+        // Fallback polling interval in case it was set directly
+        setInterval(() => {
+          if ((window as any).turnstile && !(window as any).turnstile.__vfsHooked) {
+            hookTurnstileObj((window as any).turnstile);
+          }
+        }, 10);
       });
 
       // =========================================================
@@ -499,136 +560,191 @@ export class VfsAutomationService {
 
         if (token) {
           this.logger.log(`[Step 01] Injecting Turnstile token into page & Angular Ivy forms...`);
-          
-          // Deep injection and Angular Ivy traversal
+
+          // Deep injection, callback execution, and recursive Angular Ivy traversal
           const angularReport = await page.evaluate(({ t, email, pass }) => {
-            // --- 1. DOM INPUT INJECTION ---
-            document.querySelectorAll('form').forEach(f => {
-              let inp = f.querySelector('input[name="cf-turnstile-response"]') as HTMLInputElement;
-              if (!inp) {
-                inp = document.createElement('input');
-                inp.type = 'hidden';
-                inp.name = 'cf-turnstile-response';
-                f.appendChild(inp);
+            const report: any = {
+              turnstileHookFound: !!(window as any).__vfsTurnstileCallback,
+              turnstileOptionsFound: !!(window as any).__vfsTurnstileOptions,
+              cbInvoked: false,
+              cbMethod: null,
+              cbError: null,
+              injectedInputsCount: 0,
+              formsCount: 0,
+              componentsCount: 0,
+              loginComponent: null,
+              captchaComponent: null,
+              patchedForms: [],
+              buttonDisabledBefore: null,
+              buttonClassesBefore: null,
+            };
+
+            // Helper to invoke callback inside Zone.js to trigger Angular Change Detection
+            const invokeInZone = (fn: any, arg: any, label: string) => {
+              if (typeof fn !== 'function') return false;
+              try {
+                if ((window as any).Zone && (window as any).Zone.current) {
+                  (window as any).Zone.current.run(() => fn(arg));
+                } else {
+                  fn(arg);
+                }
+                report.cbInvoked = true;
+                report.cbMethod = label;
+                return true;
+              } catch (err: any) {
+                report.cbError = `${label}: ${err.message}`;
+                return false;
               }
-              inp.value = t;
-              inp.dispatchEvent(new Event('input', { bubbles: true }));
-              inp.dispatchEvent(new Event('change', { bubbles: true }));
-            });
+            };
 
-            document.querySelectorAll('input[name="cf-turnstile-response"], input[name="g-recaptcha-response"]').forEach((el: any) => {
-              el.value = t;
-              el.dispatchEvent(new Event('input', { bubbles: true }));
-              el.dispatchEvent(new Event('change', { bubbles: true }));
-            });
-
-            document.querySelectorAll('[formcontrolname], [formControlName]').forEach((el: any) => {
-              const name = (el.getAttribute('formcontrolname') || el.getAttribute('formControlName') || '').toLowerCase();
-              if (name.includes('captcha') || name.includes('turnstile') || name.includes('token') || name.includes('challenge')) {
-                el.value = t;
-                el.dispatchEvent(new Event('input', { bubbles: true }));
-                el.dispatchEvent(new Event('change', { bubbles: true }));
-              }
-            });
-
-            // Global callbacks if present
-            for (const k of Object.keys(window)) {
-              if (typeof (window as any)[k] === 'function' && (k.toLowerCase().includes('turnstile') || k.toLowerCase().includes('captcha'))) {
-                try { (window as any)[k](t); } catch(_) {}
+            // --- 1. INVOKE CAPTURED TURNSTILE CALLBACK ---
+            if ((window as any).__vfsTurnstileCallback) {
+              invokeInZone((window as any).__vfsTurnstileCallback, t, '__vfsTurnstileCallback');
+            }
+            if (!report.cbInvoked && (window as any).__vfsTurnstileOptions?.callback) {
+              invokeInZone((window as any).__vfsTurnstileOptions.callback, t, '__vfsTurnstileOptions.callback');
+            }
+            if (!report.cbInvoked && Array.isArray((window as any).__vfsRenderCalls)) {
+              for (let i = 0; i < (window as any).__vfsRenderCalls.length; i++) {
+                const call = (window as any).__vfsRenderCalls[i];
+                if (call.options && typeof call.options.callback === 'function') {
+                  if (invokeInZone(call.options.callback, t, `__vfsRenderCalls[${i}].callback`)) break;
+                }
               }
             }
 
+            // Global callbacks on window (e.g. data-callback)
+            for (const k of Object.keys(window)) {
+              if (typeof (window as any)[k] === 'function' &&
+                  (k.toLowerCase().includes('turnstile') || k.toLowerCase().includes('captcha')) &&
+                  !k.startsWith('__vfs')) {
+                try {
+                  invokeInZone((window as any)[k], t, `window.${k}`);
+                } catch (_) {}
+              }
+            }
+
+            // Update turnstile.getResponse
             if (typeof (window as any).turnstile === 'object' && (window as any).turnstile !== null) {
               try {
                 (window as any).turnstile.getResponse = () => t;
               } catch (_) {}
             }
 
-            // Also post Turnstile success message in case scripts listen to window messages
+            // --- 2. DOM INPUT INJECTION ---
+            const injectInputTo = (container: Element | null) => {
+              if (!container) return;
+              let inp = container.querySelector('input[name="cf-turnstile-response"]') as HTMLInputElement;
+              if (!inp) {
+                inp = document.createElement('input');
+                inp.type = 'hidden';
+                inp.name = 'cf-turnstile-response';
+                container.appendChild(inp);
+              }
+              inp.value = t;
+              inp.dispatchEvent(new Event('input', { bubbles: true }));
+              inp.dispatchEvent(new Event('change', { bubbles: true }));
+              report.injectedInputsCount++;
+            };
+
+            document.querySelectorAll('form').forEach(f => injectInputTo(f));
+            document.querySelectorAll('app-cloudflare-captcha-container').forEach(c => injectInputTo(c));
+            document.querySelectorAll('.cf-turnstile, #widgetId, [id*="cf-"], [id*="turnstile"]').forEach(w => injectInputTo(w));
+
+            // Also inject into the container captured during render
+            const capturedContainer = (window as any).__vfsTurnstileContainer;
+            if (capturedContainer) {
+              if (typeof capturedContainer === 'string') {
+                const el = document.querySelector(capturedContainer);
+                if (el) injectInputTo(el);
+              } else if (capturedContainer instanceof Element) {
+                injectInputTo(capturedContainer);
+              }
+            }
+
+            // Post message for any listeners
             try {
               window.postMessage({ source: 'cloudflare-turnstile', event: 'success', token: t }, '*');
               window.postMessage({ type: 'cf-turnstile-response', token: t }, '*');
             } catch (_) {}
 
-            // --- 2. ANGULAR IVY DEEP SEARCH ---
+            // --- 3. RECURSIVE ANGULAR IVY DEEP SEARCH ---
             const foundForms: any[] = [];
             const foundComponents: any[] = [];
             let loginCompInstance: any = null;
             let captchaCompInstance: any = null;
-            const inspectedLViews = new Set<any>();
+            const visited = new Set<any>();
 
-            function inspectLView(lView: any[]) {
-              if (!lView || inspectedLViews.has(lView)) return;
-              inspectedLViews.add(lView);
-              for (let i = 0; i < lView.length; i++) {
-                const item = lView[i];
-                if (!item || typeof item !== 'object' || item instanceof Node || Array.isArray(item)) continue;
+            function checkIvyItem(item: any) {
+              if (!item || typeof item !== 'object' || item instanceof Node || Array.isArray(item)) return;
 
-                // Check if item itself is a FormGroup
-                if (item.controls && typeof item.patchValue === 'function') {
-                  if (!foundForms.includes(item)) foundForms.push(item);
-                }
-                // Check if item is a directive with .form or .control
-                if (item.form && item.form.controls && typeof item.form.patchValue === 'function') {
-                  if (!foundForms.includes(item.form)) foundForms.push(item.form);
-                }
-                if (item.control && item.control.controls && typeof item.control.patchValue === 'function') {
-                  if (!foundForms.includes(item.control)) foundForms.push(item.control);
-                }
-                // Check if item has loginForm property
-                if (item.loginForm && item.loginForm.controls && typeof item.loginForm.patchValue === 'function') {
-                  if (!foundForms.includes(item.loginForm)) foundForms.push(item.loginForm);
-                }
-                // Check if item is AppLoginComponent
-                if (item.loginForm || item.onSubmit || item.login || item.signIn || item.authenticate) {
-                  if (!foundComponents.includes(item)) foundComponents.push(item);
-                  if (!loginCompInstance) loginCompInstance = item;
-                }
-                // Check if item is CloudflareCaptchaContainerComponent
-                const constructorName = item.constructor?.name || '';
-                if (constructorName.toLowerCase().includes('captcha') || constructorName.toLowerCase().includes('cloudflare') || item.siteKey || item.widgetId) {
-                  if (!captchaCompInstance) captchaCompInstance = item;
-                }
+              // Check if item is a FormGroup
+              if (item.controls && typeof item.patchValue === 'function') {
+                if (!foundForms.includes(item)) foundForms.push(item);
+              }
+              if (item.form && item.form.controls && typeof item.form.patchValue === 'function') {
+                if (!foundForms.includes(item.form)) foundForms.push(item.form);
+              }
+              if (item.control && item.control.controls && typeof item.control.patchValue === 'function') {
+                if (!foundForms.includes(item.control)) foundForms.push(item.control);
+              }
+              if (item.loginForm && item.loginForm.controls && typeof item.loginForm.patchValue === 'function') {
+                if (!foundForms.includes(item.loginForm)) foundForms.push(item.loginForm);
+              }
+
+              // Check if item is Login Component
+              if (item.loginForm || item.onSubmit || item.login || item.signIn || item.authenticate) {
+                if (!foundComponents.includes(item)) foundComponents.push(item);
+                if (!loginCompInstance) loginCompInstance = item;
+              }
+
+              // Check if item is Cloudflare Captcha Container Component
+              const constructorName = item.constructor?.name || '';
+              if (
+                constructorName.toLowerCase().includes('captcha') ||
+                constructorName.toLowerCase().includes('cloudflare') ||
+                item.siteKey ||
+                item.widgetId ||
+                item.resolved
+              ) {
+                if (!captchaCompInstance) captchaCompInstance = item;
               }
             }
 
-            // Direct check on <app-login> and <app-cloudflare-captcha-container>
-            const loginEl = document.querySelector('app-login') as any;
-            if (loginEl && loginEl.__ngContext__) {
-              const lCtx = Array.isArray(loginEl.__ngContext__) ? loginEl.__ngContext__ : loginEl.__ngContext__.lView;
-              if (Array.isArray(lCtx)) inspectLView(lCtx);
-            }
+            function walkIvy(node: any, depth = 0) {
+              if (!node || depth > 8 || visited.has(node)) return;
+              visited.add(node);
 
-            const captchaContainerEl = document.querySelector('app-cloudflare-captcha-container') as any;
-            if (captchaContainerEl && captchaContainerEl.__ngContext__) {
-              const cCtx = Array.isArray(captchaContainerEl.__ngContext__) ? captchaContainerEl.__ngContext__ : captchaContainerEl.__ngContext__.lView;
-              if (Array.isArray(cCtx)) inspectLView(cCtx);
-            }
-
-            // Scan all DOM elements directly for __ngContext__
-            const allElements = Array.from(document.querySelectorAll('*'));
-            for (const el of allElements) {
-              const ctx = (el as any).__ngContext__;
-              if (!ctx) continue;
-              if (Array.isArray(ctx)) {
-                inspectLView(ctx);
-              } else if (typeof ctx === 'number') {
-                let cur = el.parentElement;
-                while (cur) {
-                  const pCtx = (cur as any).__ngContext__;
-                  if (Array.isArray(pCtx)) {
-                    inspectLView(pCtx);
-                    break;
+              if (Array.isArray(node)) {
+                for (let i = 0; i < node.length; i++) {
+                  const it = node[i];
+                  if (!it) continue;
+                  if (Array.isArray(it)) {
+                    walkIvy(it, depth + 1);
+                  } else if (typeof it === 'object' && !(it instanceof Node)) {
+                    checkIvyItem(it);
+                    if (it.lView && Array.isArray(it.lView)) walkIvy(it.lView, depth + 1);
                   }
-                  cur = cur.parentElement;
                 }
-              } else if (typeof ctx === 'object') {
-                if (Array.isArray(ctx.lView)) inspectLView(ctx.lView);
-                if (Array.isArray(ctx.raw)) inspectLView(ctx.raw);
+                return;
+              }
+
+              if (typeof node === 'object' && !(node instanceof Node)) {
+                checkIvyItem(node);
+                if (node.lView && Array.isArray(node.lView)) walkIvy(node.lView, depth + 1);
+                if (node.raw && Array.isArray(node.raw)) walkIvy(node.raw, depth + 1);
               }
             }
 
-            // Also check window.ng if present
+            // Scan all DOM elements
+            document.querySelectorAll('*').forEach((el: any) => {
+              if (el.__ngContext__) walkIvy(el.__ngContext__);
+              for (const k of Object.keys(el)) {
+                if (k.startsWith('__ng') && el[k]) walkIvy(el[k]);
+              }
+            });
+
+            // Also check window.ng if available
             if (typeof (window as any).ng === 'object' && (window as any).ng !== null) {
               const formEl = document.querySelector('form');
               if (formEl) {
@@ -636,35 +752,25 @@ export class VfsAutomationService {
                   const comp = (window as any).ng.getComponent(formEl);
                   if (comp && !foundComponents.includes(comp)) foundComponents.push(comp);
                 } catch (_) {}
-                try {
-                  const dirs = (window as any).ng.getDirectives(formEl);
-                  for (const d of dirs || []) {
-                    if (d?.form?.controls && !foundForms.includes(d.form)) foundForms.push(d.form);
-                  }
-                } catch (_) {}
               }
             }
 
-            // --- 3. PATCH CAPTCHA CONTAINER COMPONENT ---
-            let captchaComponentReport: any = null;
+            // --- 4. PATCH CAPTCHA CONTAINER COMPONENT ---
             if (captchaCompInstance) {
-              captchaComponentReport = {
+              report.captchaComponent = {
                 name: captchaCompInstance.constructor?.name,
                 props: Object.keys(captchaCompInstance),
               };
-              // Set token property
               for (const p of Object.keys(captchaCompInstance)) {
-                if (p.toLowerCase().includes('token') || p.toLowerCase().includes('captcha') || p.toLowerCase().includes('response')) {
+                if (/token|captcha|response/i.test(p)) {
                   try { captchaCompInstance[p] = t; } catch (_) {}
                 }
-                // If property is an EventEmitter, emit token
                 const val = captchaCompInstance[p];
                 if (val && typeof val.emit === 'function') {
                   try { val.emit(t); } catch (_) {}
                   try { val.emit({ token: t, response: t }); } catch (_) {}
                 }
               }
-              // Call methods on captcha container
               for (const m of ['onVerify', 'handleSuccess', 'onSuccess', 'setToken', 'resolved', 'callback']) {
                 if (typeof captchaCompInstance[m] === 'function') {
                   try { captchaCompInstance[m](t); } catch (_) {}
@@ -672,21 +778,20 @@ export class VfsAutomationService {
               }
             }
 
-            // --- 4. PATCH LOGIN COMPONENT ---
-            let loginComponentReport: any = null;
+            // --- 5. PATCH LOGIN COMPONENT ---
             if (loginCompInstance) {
-              loginComponentReport = {
+              report.loginComponent = {
                 name: loginCompInstance.constructor?.name,
                 props: Object.keys(loginCompInstance),
-                methods: Object.getOwnPropertyNames(Object.getPrototypeOf(loginCompInstance || {})),
               };
-              // Pass token directly to login component
               for (const p of Object.keys(loginCompInstance)) {
-                if (p.toLowerCase().includes('token') || p.toLowerCase().includes('captcha')) {
+                if (/token|captcha/i.test(p)) {
                   try { loginCompInstance[p] = t; } catch (_) {}
                 }
+                if (/isCaptcha/i.test(p)) {
+                  try { loginCompInstance[p] = true; } catch (_) {}
+                }
               }
-              // Call login component captcha callbacks
               for (const m of ['onCaptchaSuccess', 'captchaResponse', 'handleCaptcha', 'captchaResolved', 'setCaptchaToken', 'onCaptchaVerify']) {
                 if (typeof loginCompInstance[m] === 'function') {
                   try { loginCompInstance[m](t); } catch (_) {}
@@ -694,25 +799,13 @@ export class VfsAutomationService {
               }
             }
 
-            // --- 5. PATCH ALL FOUND FORM GROUPS ---
-            const patchedFormsInfo: any[] = [];
+            // --- 6. PATCH ALL FOUND FORM GROUPS ---
+            report.formsCount = foundForms.length;
+            report.componentsCount = foundComponents.length;
             for (const fg of foundForms) {
-              const info: any = {
-                validBefore: fg.valid,
-                statusBefore: fg.status,
-                controls: {},
-              };
-
               const ctrlKeys = Object.keys(fg.controls || {});
               for (const cName of ctrlKeys) {
                 const ctrl = fg.controls[cName];
-                info.controls[cName] = {
-                  value: ctrl.value ? (typeof ctrl.value === 'string' && ctrl.value.length > 25 ? ctrl.value.substring(0, 15) + '...' : ctrl.value) : null,
-                  valid: ctrl.valid,
-                  status: ctrl.status,
-                  errors: ctrl.errors,
-                };
-
                 if (/email|user/i.test(cName)) {
                   ctrl.setValue(email);
                   ctrl.setErrors(null);
@@ -727,56 +820,56 @@ export class VfsAutomationService {
                 ctrl.markAsTouched();
                 ctrl.updateValueAndValidity();
               }
-
               fg.setErrors(null);
               fg.updateValueAndValidity();
-              info.validAfter = fg.valid;
-              info.statusAfter = fg.status;
-              patchedFormsInfo.push(info);
+              report.patchedForms.push({ valid: fg.valid, status: fg.status });
             }
 
-            // --- 6. PREPARE SUBMIT BUTTON & REMOVE OVERLAYS ---
+            // --- 7. CLEAN OVERLAYS & RECORD BUTTON STATUS ---
             document.querySelectorAll('#onetrust-banner-sdk, #onetrust-consent-sdk, .onetrust-pc-dark-filter').forEach(el => el.remove());
 
             const signinBtn = document.querySelector('button.btn-brand-orange, form button[type="submit"]') as HTMLButtonElement;
             if (signinBtn) {
-              signinBtn.removeAttribute('disabled');
-              signinBtn.disabled = false;
-              signinBtn.classList.remove('mat-mdc-button-disabled', 'mdc-button--disabled');
-              (signinBtn.style as any).pointerEvents = 'auto';
+              report.buttonDisabledBefore = signinBtn.disabled;
+              report.buttonClassesBefore = signinBtn.className;
             }
 
-            const formEl = document.querySelector('form');
-            if (formEl) {
-              formEl.classList.remove('ng-invalid');
-              formEl.classList.add('ng-valid');
-            }
-
-            const customTags = Array.from(new Set(
-              Array.from(document.querySelectorAll('*'))
-                .map(el => el.tagName.toLowerCase())
-                .filter(t => t.includes('-'))
-            ));
-
-            return {
-              formsCount: foundForms.length,
-              componentsCount: foundComponents.length,
-              loginComponent: loginComponentReport,
-              captchaComponent: captchaComponentReport,
-              patchedForms: patchedFormsInfo,
-              customTags,
-              formOuterHtml: formEl ? formEl.outerHTML.substring(0, 4000) : 'NO FORM',
-              signinBtnFound: !!signinBtn,
-            };
+            return report;
           }, { t: token, email: vfsEmail, pass: vfsPassword });
 
-          this.logger.log(`[ANGULAR-FORM] Forms Found: ${angularReport.formsCount}, Components: ${angularReport.componentsCount}`);
-          this.logger.log(`[ANGULAR-FORM] Login Component: ${JSON.stringify(angularReport.loginComponent)}`);
-          this.logger.log(`[ANGULAR-FORM] Captcha Component: ${JSON.stringify(angularReport.captchaComponent)}`);
-          this.logger.log(`[ANGULAR-FORM] Patched Details: ${JSON.stringify(angularReport.patchedForms)}`);
-          this.logger.log(`[ANGULAR-FORM] Custom Tags: ${JSON.stringify(angularReport.customTags)}`);
+          this.logger.log(`[Step 01] Injection Report: ${JSON.stringify(angularReport)}`);
 
-          await page.waitForTimeout(1000);
+          // Allow Angular Zone and Change Detection 1.5s to settle
+          await page.waitForTimeout(1500);
+
+          // Verify button state
+          const btnStatus = await page.evaluate(() => {
+            const btn = document.querySelector('button.btn-brand-orange, form button[type="submit"]') as HTMLButtonElement;
+            if (!btn) return { exists: false, disabled: true, classes: '' };
+            return {
+              exists: true,
+              disabled: btn.disabled,
+              hasDisabledAttr: btn.hasAttribute('disabled'),
+              classes: btn.className,
+            };
+          });
+          this.logger.log(`[Step 01] Button state after Angular cycle: disabled=${btnStatus.disabled}, hasDisabledAttr=${btnStatus.hasDisabledAttr}`);
+
+          // If still disabled, unlock in DOM
+          await page.evaluate(() => {
+            const btn = document.querySelector('button.btn-brand-orange, form button[type="submit"]') as HTMLButtonElement;
+            if (btn) {
+              btn.removeAttribute('disabled');
+              btn.disabled = false;
+              btn.classList.remove('mat-mdc-button-disabled', 'mdc-button--disabled');
+              (btn.style as any).pointerEvents = 'auto';
+            }
+            const form = document.querySelector('form');
+            if (form) {
+              form.classList.remove('ng-invalid');
+              form.classList.add('ng-valid');
+            }
+          });
           this.logger.log(`[Step 01] Token injected and Angular forms patched.`);
         } else {
           this.logger.warn(`[Step 01] CapSolver did not return a token.`);
@@ -789,30 +882,20 @@ export class VfsAutomationService {
       // ==========================================
       // STEP 01d - Submit Login Form
       // ==========================================
+      // Monitor network for login API call
+      let loginApiTriggered = false;
+      const onLoginResponse = (res: any) => {
+        const u = res.url();
+        if (u.includes('/login') || u.includes('/auth') || u.includes('/authenticate') || u.includes('user/login')) {
+          loginApiTriggered = true;
+          this.logger.log(`[Step 01] 🎯 VFS Login API responded: ${res.status()} ${u}`);
+        }
+      };
+      page.on('response', onLoginResponse);
+
       // Trigger component methods directly if available
       const calledMethod = await page.evaluate(() => {
         let called: string | null = null;
-        // Direct check on app-login element
-        const loginEl = document.querySelector('app-login') as any;
-        if (loginEl && loginEl.__ngContext__) {
-          const lCtx = Array.isArray(loginEl.__ngContext__) ? loginEl.__ngContext__ : loginEl.__ngContext__.lView;
-          if (Array.isArray(lCtx)) {
-            for (const item of lCtx) {
-              if (!item || typeof item !== 'object' || item instanceof Node || Array.isArray(item)) continue;
-              for (const m of ['onSubmit', 'login', 'signIn', 'authenticate', 'onLogin', 'submit']) {
-                if (typeof item[m] === 'function') {
-                  try {
-                    item[m]();
-                    called = `${item.constructor?.name}.${m}`;
-                    return called;
-                  } catch (_) {}
-                }
-              }
-            }
-          }
-        }
-
-        // Scan all DOM elements
         const allElements = Array.from(document.querySelectorAll('*'));
         for (const el of allElements) {
           const ctx = (el as any).__ngContext__;
