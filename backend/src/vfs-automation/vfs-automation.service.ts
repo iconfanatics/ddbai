@@ -285,33 +285,16 @@ export class VfsAutomationService {
         await this.updateAppStatus(applicationId, `IP: ${proxyIp} | CapSolver: $${capBalance}`);
       }
 
-      // Intercept Turnstile to capture sitekey + auto-token
-      await page.addInitScript(() => {
-        (window as any).__turnstileToken = null;
-        (window as any).__turnstileSitekey = null;
-        Object.defineProperty(window, 'turnstile', {
-          get: () => (window as any).__turnstileImpl,
-          set: (val: any) => {
-            const origRender = val.render;
-            val.render = function (ele: any, options: any) {
-              // ⭐ Capture the sitekey from render options
-              const sk = options?.sitekey || options?.websiteKey || options?.site_key;
-              if (sk) (window as any).__turnstileSitekey = sk;
-
-              // Also capture token when callback fires (auto-solve)
-              if (options?.callback) {
-                const origCb = options.callback;
-                options.callback = (token: string) => {
-                  (window as any).__turnstileToken = token;
-                  return origCb(token);
-                };
-              }
-              return origRender.apply(this, [ele, options]);
-            };
-            (window as any).__turnstileImpl = val;
-          },
-          configurable: true,
-        });
+      // Listen to page console and error logs for debugging
+      page.on('console', msg => {
+        const text = msg.text();
+        const type = msg.type();
+        if (type === 'error' || text.toLowerCase().includes('turnstile') || text.toLowerCase().includes('captcha') || text.toLowerCase().includes('fail')) {
+          this.logger.log(`[PAGE-CONSOLE:${type}] ${text}`);
+        }
+      });
+      page.on('pageerror', err => {
+        this.logger.warn(`[PAGE-ERROR] ${err.message}`);
       });
 
       // =========================================================
@@ -386,24 +369,37 @@ export class VfsAutomationService {
       this.logger.log(`[Step 01] Waiting for form fields...`);
       await page.waitForSelector(emailSelector, { state: 'visible', timeout: 20000 });
 
-      await page.locator(emailSelector).pressSequentially(vfsEmail, { delay: 80 });
+      await page.locator(emailSelector).pressSequentially(vfsEmail, { delay: 60 });
       await page.keyboard.press('Tab');
-      await page.waitForTimeout(500);
+      await page.waitForTimeout(400);
       this.logger.log(`[Step 01] Entered Email.`);
       if (applicationId) await this.updateAppStatus(applicationId, 'Entering credentials...');
 
-      await page.locator(passwordSelector).pressSequentially(vfsPassword, { delay: 80 });
+      await page.locator(passwordSelector).pressSequentially(vfsPassword, { delay: 60 });
       await page.keyboard.press('Tab');
-      this.logger.log(`[Step 01] Entered Password. Waiting 12s for Angular/Cloudflare to initialize captcha...`);
-      
-      // Wait for Angular to render the captcha component and Turnstile to call render()
-      await page.waitForTimeout(12000);
+      await page.waitForTimeout(400);
 
-      // Read sitekey captured by our initScript interceptor
-      const initScriptSitekey = await page.evaluate(() => (window as any).__turnstileSitekey as string | null);
-      const initScriptToken = await page.evaluate(() => (window as any).__turnstileToken as string | null);
-      this.logger.log(`[DEBUG] initScript captured sitekey: ${initScriptSitekey}`);
-      this.logger.log(`[DEBUG] initScript auto-token: ${initScriptToken ? 'YES ✅' : 'null'}`);
+      // Dispatch native input & change events for Angular
+      await page.evaluate(({ email, pass }) => {
+        const emailEl = document.querySelector('input[formcontrolname="username"], input#email') as HTMLInputElement;
+        if (emailEl) {
+          emailEl.value = email;
+          emailEl.dispatchEvent(new Event('input', { bubbles: true }));
+          emailEl.dispatchEvent(new Event('change', { bubbles: true }));
+          emailEl.dispatchEvent(new Event('blur', { bubbles: true }));
+        }
+        const passEl = document.querySelector('input[formcontrolname="password"], input[type="password"]') as HTMLInputElement;
+        if (passEl) {
+          passEl.value = pass;
+          passEl.dispatchEvent(new Event('input', { bubbles: true }));
+          passEl.dispatchEvent(new Event('change', { bubbles: true }));
+          passEl.dispatchEvent(new Event('blur', { bubbles: true }));
+        }
+      }, { email: vfsEmail, pass: vfsPassword });
+      this.logger.log(`[Step 01] Credentials entered and Angular input events dispatched.`);
+
+      // Wait 5s for page scripts to settle
+      await page.waitForTimeout(5000);
 
       // ================================================================
       // DEEP SCAN: Find sitekey from DOM, scripts, and iframe sources
@@ -413,32 +409,21 @@ export class VfsAutomationService {
           el.tagName + (el.getAttribute('formcontrolname') ? `[${el.getAttribute('formcontrolname')}]` : '') + ' ' + el.className
         );
 
-        // Wait-free iframe scan including contentWindow
         const iframes = Array.from(document.querySelectorAll('iframe')).map(f => ({
           src: f.src,
           name: f.name,
           id: f.id,
         }));
 
-        // DOM sitekey from standard elements
         const cfEl = document.querySelector('.cf-turnstile, [data-sitekey]');
         const cfSitekey = cfEl?.getAttribute('data-sitekey') ?? null;
 
-        // Scan all inline scripts for 0x4... pattern (Turnstile sitekey format)
         const scriptKeys: string[] = [];
         document.querySelectorAll('script:not([src])').forEach(s => {
           const matches = (s.textContent || '').matchAll(/0x4[a-zA-Z0-9_-]{8,}/g);
           for (const m of matches) scriptKeys.push(m[0]);
         });
 
-        // Scan all script src URLs
-        const scriptSrcs = Array.from(document.querySelectorAll('script[src]')).map(s => (s as HTMLScriptElement).src);
-
-        // Scan app-captcha component attributes
-        const captchaEl = document.querySelector('app-captcha');
-        const captchaHtml = captchaEl ? captchaEl.outerHTML.substring(0, 500) : null;
-
-        // Scan all elements with sitekey-related attributes
         const allSitekeys: string[] = [];
         document.querySelectorAll('[sitekey], [data-sitekey], [ng-reflect-site-key]').forEach(el => {
           ['sitekey', 'data-sitekey', 'ng-reflect-site-key'].forEach(attr => {
@@ -447,32 +432,27 @@ export class VfsAutomationService {
           });
         });
 
-        return { invalids, iframes, cfSitekey, scriptKeys, allSitekeys, captchaHtml, scriptSrcs };
+        return { invalids, iframes, cfSitekey, scriptKeys, allSitekeys };
       });
 
       this.logger.log(`[DEBUG] ng-invalid: ${JSON.stringify(domDebug.invalids)}`);
       this.logger.log(`[DEBUG] iframes: ${JSON.stringify(domDebug.iframes)}`);
       this.logger.log(`[DEBUG] DOM sitekey: ${domDebug.cfSitekey}`);
       this.logger.log(`[DEBUG] allSitekeys: ${JSON.stringify(domDebug.allSitekeys)}`);
-      this.logger.log(`[DEBUG] inline script keys: ${JSON.stringify(domDebug.scriptKeys)}`);
-      this.logger.log(`[DEBUG] app-captcha: ${domDebug.captchaHtml}`);
-      this.logger.log(`[DEBUG] script srcs (first 5): ${JSON.stringify(domDebug.scriptSrcs.slice(0, 5))}`);
 
-      // Poll iframe src for up to 5s (it may populate after JS executes)
+      // Poll iframe src for sitekey
       let iframeSitekey: string | null = null;
-      for (let i = 0; i < 10; i++) {
-        await page.waitForTimeout(500);
+      for (let i = 0; i < 5; i++) {
         iframeSitekey = await page.evaluate(() => {
-          const iframes = document.querySelectorAll('iframe');
-          for (const f of iframes) {
+          for (const f of Array.from(document.querySelectorAll('iframe'))) {
             if (!f.src) continue;
-            // sitekey is in URL path like /0x4.../
             const m = f.src.match(/\/(0x4[a-zA-Z0-9_-]+)\//);
             if (m) return m[1];
-            // or as query param k=0x4...
-            const u = new URL(f.src);
-            const k = u.searchParams.get('k') || u.searchParams.get('sitekey');
-            if (k) return k;
+            try {
+              const u = new URL(f.src);
+              const k = u.searchParams.get('k') || u.searchParams.get('sitekey');
+              if (k) return k;
+            } catch (_) {}
           }
           return null;
         });
@@ -480,6 +460,7 @@ export class VfsAutomationService {
           this.logger.log(`[DEBUG] 🔑 Found sitekey in iframe src: ${iframeSitekey}`);
           break;
         }
+        await page.waitForTimeout(500);
       }
 
       // ==========================================
@@ -488,37 +469,24 @@ export class VfsAutomationService {
       if (capsolverKey) {
         if (applicationId) await this.updateAppStatus(applicationId, 'Solving Turnstile via CapSolver...');
 
-        // Remove redundant network wait (already waited 12s above)
-        // Priority: 0) initScript render-captured  1) network  2) iframe  3) script  4) DOM  5) hardcoded
-        const sitekey = initScriptSitekey || capturedSitekey || iframeSitekey || domDebug.scriptKeys[0] || domDebug.cfSitekey || VFS_TURNSTILE_SITEKEY;
-        const skSource = initScriptSitekey ? 'RENDER INTERCEPT ✅' : capturedSitekey ? 'NETWORK ✅' : iframeSitekey ? 'IFRAME ✅' : domDebug.scriptKeys[0] ? 'SCRIPT ✅' : domDebug.cfSitekey ? 'DOM' : 'HARDCODED ⚠️';
+        // Priority: 1) network captured  2) iframe  3) script  4) DOM  5) hardcoded VFS static key
+        const sitekey = capturedSitekey || iframeSitekey || domDebug.scriptKeys[0] || domDebug.cfSitekey || VFS_TURNSTILE_SITEKEY;
+        const skSource = capturedSitekey ? 'NETWORK ✅' : iframeSitekey ? 'IFRAME ✅' : domDebug.scriptKeys[0] ? 'SCRIPT ✅' : domDebug.cfSitekey ? 'DOM' : 'STATIC/DEFAULT 🎯';
         this.logger.log(`[Step 01] Using Turnstile sitekey: ${sitekey} (${skSource})`);
 
-        // If Turnstile already auto-solved (invisible mode), skip CapSolver
-        let token: string | null = initScriptToken;
-        if (token) {
-          this.logger.log(`[Step 01] ✅ Turnstile auto-solved! Token already captured from initScript.`);
-        } else {
-          token = await this.solveTurnstileWithCapSolver(
-            capsolverKey,
-            targetUrl,
-            sitekey,
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36'
-          );
-        }
+        const token = await this.solveTurnstileWithCapSolver(
+          capsolverKey,
+          targetUrl,
+          sitekey,
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36'
+        );
 
         if (token) {
-          this.logger.log(`[Step 01] Injecting Turnstile token into page...`);
+          this.logger.log(`[Step 01] Injecting Turnstile token into page & Angular Ivy forms...`);
           
-          // Deep injection and Angular FormGroup inspection
-          const angularReport = await page.evaluate((t: string) => {
-            // 1. Inject hidden cf-turnstile-response inputs into all forms and body
-            document.querySelectorAll('input[name="cf-turnstile-response"]').forEach((el: any) => {
-              el.value = t;
-              el.dispatchEvent(new Event('input', { bubbles: true }));
-              el.dispatchEvent(new Event('change', { bubbles: true }));
-            });
-
+          // Deep injection and Angular Ivy traversal
+          const angularReport = await page.evaluate(({ t, email, pass }) => {
+            // --- 1. DOM INPUT INJECTION ---
             document.querySelectorAll('form').forEach(f => {
               let inp = f.querySelector('input[name="cf-turnstile-response"]') as HTMLInputElement;
               if (!inp) {
@@ -532,7 +500,12 @@ export class VfsAutomationService {
               inp.dispatchEvent(new Event('change', { bubbles: true }));
             });
 
-            // 2. Set any formcontrol containing captcha, turnstile, or token
+            document.querySelectorAll('input[name="cf-turnstile-response"], input[name="g-recaptcha-response"]').forEach((el: any) => {
+              el.value = t;
+              el.dispatchEvent(new Event('input', { bubbles: true }));
+              el.dispatchEvent(new Event('change', { bubbles: true }));
+            });
+
             document.querySelectorAll('[formcontrolname], [formControlName]').forEach((el: any) => {
               const name = (el.getAttribute('formcontrolname') || el.getAttribute('formControlName') || '').toLowerCase();
               if (name.includes('captcha') || name.includes('turnstile') || name.includes('token') || name.includes('challenge')) {
@@ -542,103 +515,183 @@ export class VfsAutomationService {
               }
             });
 
-            // 3. Check for Angular Component Instance via __ngContext__
-            let compInstance: any = null;
-            const searchEls = [document.querySelector('app-login'), document.querySelector('form'), document.querySelector('app-root')];
-            for (const el of searchEls) {
-              if (!el) continue;
-              for (const key in el) {
-                if (key.startsWith('__ngContext__')) {
-                  const ctx = (el as any)[key];
-                  if (Array.isArray(ctx)) {
-                    for (const item of ctx) {
-                      if (item && typeof item === 'object' && (item.loginForm || item.form || item.onSubmit || item.login)) {
-                        compInstance = item;
-                        break;
-                      }
-                    }
-                  }
-                }
-                if (compInstance) break;
-              }
-              if (compInstance) break;
-            }
-
-            const controlsDebug: any = {};
-            let formPatched = false;
-            let formValidBefore = false;
-            let formValidAfter = false;
-
-            if (compInstance) {
-              const fg = compInstance.loginForm || compInstance.form;
-              if (fg && fg.controls) {
-                formValidBefore = fg.valid;
-                for (const cName in fg.controls) {
-                  const ctrl = fg.controls[cName];
-                  controlsDebug[cName] = {
-                    value: ctrl.value ? (typeof ctrl.value === 'string' && ctrl.value.length > 20 ? ctrl.value.substring(0, 10) + '...' : ctrl.value) : null,
-                    valid: ctrl.valid,
-                    errors: ctrl.errors,
-                    status: ctrl.status,
-                  };
-                  // If control is invalid or is captcha-related, patch the token
-                  if (cName.toLowerCase().includes('captcha') || cName.toLowerCase().includes('turnstile') || !ctrl.valid) {
-                    if (cName.toLowerCase().includes('captcha') || cName.toLowerCase().includes('turnstile') || ctrl.errors?.required) {
-                      try {
-                        ctrl.setValue(t);
-                        ctrl.updateValueAndValidity();
-                        formPatched = true;
-                      } catch (_) {}
-                    }
-                  }
-                }
-                try {
-                  fg.updateValueAndValidity();
-                  formValidAfter = fg.valid;
-                } catch (_) {}
-              }
-            }
-
-            // 4. Try global Turnstile callbacks
+            // Global callbacks if present
             for (const k of Object.keys(window)) {
               if (typeof (window as any)[k] === 'function' && (k.toLowerCase().includes('turnstile') || k.toLowerCase().includes('captcha'))) {
                 try { (window as any)[k](t); } catch(_) {}
               }
             }
 
-            // 5. Gather form HTML and buttons
+            if (typeof (window as any).turnstile === 'object' && (window as any).turnstile !== null) {
+              try {
+                (window as any).turnstile.getResponse = () => t;
+              } catch (_) {}
+            }
+
+            // --- 2. ANGULAR IVY DEEP SEARCH ---
+            const foundForms: any[] = [];
+            const foundComponents: any[] = [];
+            const inspectedLViews = new Set<any>();
+
+            function inspectLView(lView: any[]) {
+              if (!lView || inspectedLViews.has(lView)) return;
+              inspectedLViews.add(lView);
+              for (let i = 0; i < lView.length; i++) {
+                const item = lView[i];
+                if (!item || typeof item !== 'object') continue;
+
+                // Check if item itself is a FormGroup
+                if (item.controls && typeof item.patchValue === 'function') {
+                  if (!foundForms.includes(item)) foundForms.push(item);
+                }
+                // Check if item is a directive with .form or .control
+                if (item.form && item.form.controls && typeof item.form.patchValue === 'function') {
+                  if (!foundForms.includes(item.form)) foundForms.push(item.form);
+                }
+                if (item.control && item.control.controls && typeof item.control.patchValue === 'function') {
+                  if (!foundForms.includes(item.control)) foundForms.push(item.control);
+                }
+                // Check if item has loginForm property
+                if (item.loginForm && item.loginForm.controls && typeof item.loginForm.patchValue === 'function') {
+                  if (!foundForms.includes(item.loginForm)) foundForms.push(item.loginForm);
+                }
+                // Check if item looks like a login component
+                if (item.loginForm || item.onSubmit || item.login || item.signIn || item.authenticate) {
+                  if (!foundComponents.includes(item)) foundComponents.push(item);
+                }
+              }
+            }
+
+            // Scan all DOM elements for __ngContext__
+            const allElements = Array.from(document.querySelectorAll('*'));
+            for (const el of allElements) {
+              for (const key of Object.keys(el)) {
+                if (key.startsWith('__ngContext__')) {
+                  const ctx = (el as any)[key];
+                  if (Array.isArray(ctx)) {
+                    inspectLView(ctx);
+                  } else if (typeof ctx === 'number') {
+                    let cur = el.parentElement;
+                    while (cur) {
+                      for (const pk of Object.keys(cur)) {
+                        if (pk.startsWith('__ngContext__') && Array.isArray((cur as any)[pk])) {
+                          inspectLView((cur as any)[pk]);
+                          break;
+                        }
+                      }
+                      cur = cur.parentElement;
+                    }
+                  } else if (ctx && typeof ctx === 'object') {
+                    if (Array.isArray(ctx.lView)) inspectLView(ctx.lView);
+                    if (Array.isArray(ctx.raw)) inspectLView(ctx.raw);
+                  }
+                }
+              }
+            }
+
+            // Also check window.ng if present
+            if (typeof (window as any).ng === 'object' && (window as any).ng !== null) {
+              const formEl = document.querySelector('form');
+              if (formEl) {
+                try {
+                  const comp = (window as any).ng.getComponent(formEl);
+                  if (comp && !foundComponents.includes(comp)) foundComponents.push(comp);
+                } catch (_) {}
+                try {
+                  const dirs = (window as any).ng.getDirectives(formEl);
+                  for (const d of dirs || []) {
+                    if (d?.form?.controls && !foundForms.includes(d.form)) foundForms.push(d.form);
+                  }
+                } catch (_) {}
+              }
+            }
+
+            // --- 3. PATCH ALL FOUND FORM GROUPS ---
+            const patchedFormsInfo: any[] = [];
+            for (const fg of foundForms) {
+              const info: any = {
+                validBefore: fg.valid,
+                statusBefore: fg.status,
+                controls: {},
+              };
+
+              const ctrlKeys = Object.keys(fg.controls || {});
+              for (const cName of ctrlKeys) {
+                const ctrl = fg.controls[cName];
+                info.controls[cName] = {
+                  value: ctrl.value ? (typeof ctrl.value === 'string' && ctrl.value.length > 25 ? ctrl.value.substring(0, 15) + '...' : ctrl.value) : null,
+                  valid: ctrl.valid,
+                  status: ctrl.status,
+                  errors: ctrl.errors,
+                };
+
+                if (/email|user/i.test(cName)) {
+                  ctrl.setValue(email);
+                  ctrl.setErrors(null);
+                } else if (/pass/i.test(cName)) {
+                  ctrl.setValue(pass);
+                  ctrl.setErrors(null);
+                } else {
+                  ctrl.setValue(t);
+                  ctrl.setErrors(null);
+                }
+                ctrl.markAsDirty();
+                ctrl.markAsTouched();
+                ctrl.updateValueAndValidity();
+              }
+
+              fg.setErrors(null);
+              fg.updateValueAndValidity();
+              info.validAfter = fg.valid;
+              info.statusAfter = fg.status;
+              patchedFormsInfo.push(info);
+            }
+
+            // --- 4. PREPARE SUBMIT BUTTON & REMOVE OVERLAYS ---
+            document.querySelectorAll('#onetrust-banner-sdk, #onetrust-consent-sdk, .onetrust-pc-dark-filter').forEach(el => el.remove());
+
+            const signinBtn = document.querySelector('button.btn-brand-orange, form button[type="submit"]') as HTMLButtonElement;
+            if (signinBtn) {
+              signinBtn.removeAttribute('disabled');
+              signinBtn.disabled = false;
+              signinBtn.classList.remove('mat-mdc-button-disabled', 'mdc-button--disabled');
+              (signinBtn.style as any).pointerEvents = 'auto';
+            }
+
             const formEl = document.querySelector('form');
-            const buttons = Array.from(document.querySelectorAll('button')).map(b => ({
-              text: b.textContent?.trim(),
-              type: b.type,
-              disabled: b.disabled,
-              classes: b.className
-            }));
+            if (formEl) {
+              formEl.classList.remove('ng-invalid');
+              formEl.classList.add('ng-valid');
+            }
+
+            const customTags = Array.from(new Set(
+              Array.from(document.querySelectorAll('*'))
+                .map(el => el.tagName.toLowerCase())
+                .filter(t => t.includes('-'))
+            ));
 
             return {
-              hasComponent: !!compInstance,
-              formPatched,
-              formValidBefore,
-              formValidAfter,
-              controls: controlsDebug,
-              buttons,
-              formHtml: formEl ? formEl.outerHTML.substring(0, 800) : 'NO FORM'
+              formsCount: foundForms.length,
+              componentsCount: foundComponents.length,
+              components: foundComponents.map(c => ({
+                name: c?.constructor?.name,
+                methods: Object.getOwnPropertyNames(Object.getPrototypeOf(c || {})).filter(m => /login|submit|signin|auth/i.test(m))
+              })),
+              patchedForms: patchedFormsInfo,
+              customTags,
+              formOuterHtml: formEl ? formEl.outerHTML.substring(0, 4000) : 'NO FORM',
+              signinBtnFound: !!signinBtn,
             };
-          }, token);
+          }, { t: token, email: vfsEmail, pass: vfsPassword });
 
-          this.logger.log(`[ANGULAR-FORM] Component Found: ${angularReport.hasComponent}, Patched: ${angularReport.formPatched}, Valid: ${angularReport.formValidAfter}`);
-          this.logger.log(`[ANGULAR-FORM] Controls: ${JSON.stringify(angularReport.controls)}`);
-          this.logger.log(`[ANGULAR-FORM] Buttons: ${JSON.stringify(angularReport.buttons)}`);
-          this.logger.log(`[ANGULAR-FORM] Form HTML: ${angularReport.formHtml}`);
+          this.logger.log(`[ANGULAR-FORM] Forms Found: ${angularReport.formsCount}, Components: ${angularReport.componentsCount}`);
+          this.logger.log(`[ANGULAR-FORM] Patched Details: ${JSON.stringify(angularReport.patchedForms)}`);
+          this.logger.log(`[ANGULAR-FORM] Components: ${JSON.stringify(angularReport.components)}`);
+          this.logger.log(`[ANGULAR-FORM] Custom Tags: ${JSON.stringify(angularReport.customTags)}`);
+          this.logger.log(`[ANGULAR-FORM] Form HTML: ${angularReport.formOuterHtml}`);
 
-          await page.waitForTimeout(2000);
-          this.logger.log(`[Step 01] Token injected. Waiting for Angular to validate...`);
-          
-          // Post-injection DOM check
-          const afterInject = await page.evaluate(() => {
-            return Array.from(document.querySelectorAll('.ng-invalid')).map(el => el.tagName + ' ' + el.className);
-          });
-          this.logger.log(`[DEBUG] After token injection ng-invalid: ${JSON.stringify(afterInject)}`);
+          await page.waitForTimeout(1000);
+          this.logger.log(`[Step 01] Token injected and Angular forms patched.`);
         } else {
           this.logger.warn(`[Step 01] CapSolver did not return a token.`);
         }
@@ -650,44 +703,83 @@ export class VfsAutomationService {
       // ==========================================
       // STEP 01d - Submit Login Form
       // ==========================================
-      // Make sure all buttons are enabled
-      await page.evaluate(() => {
-        document.querySelectorAll('button').forEach(b => {
-          b.removeAttribute('disabled');
-          b.disabled = false;
-        });
+      // Trigger component methods directly if available
+      const calledMethod = await page.evaluate(() => {
+        let called: string | null = null;
+        const allElements = Array.from(document.querySelectorAll('*'));
+        for (const el of allElements) {
+          for (const key of Object.keys(el)) {
+            if (key.startsWith('__ngContext__')) {
+              const ctx = (el as any)[key];
+              const lView = Array.isArray(ctx) ? ctx : (ctx && Array.isArray(ctx.lView) ? ctx.lView : null);
+              if (lView) {
+                for (const item of lView) {
+                  if (!item || typeof item !== 'object') continue;
+                  for (const m of ['onSubmit', 'login', 'signIn', 'authenticate', 'onLogin', 'submit']) {
+                    if (typeof item[m] === 'function') {
+                      try {
+                        item[m]();
+                        called = `${item.constructor?.name}.${m}`;
+                        return called;
+                      } catch (_) {}
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+        return called;
       });
-      await page.waitForTimeout(500);
 
-      try {
-        await page.click(loginBtnSelector, { force: true });
-        this.logger.log(`[Step 01] Clicked Login Button.`);
-      } catch (_) {
-        this.logger.warn(`[Step 01] Could not click login button.`);
+      if (calledMethod) {
+        this.logger.log(`[Step 01] Called Angular component method: ${calledMethod}`);
       }
 
-      // Also trigger form.requestSubmit() and component login method if needed
+      // Submit via DOM button click & form.requestSubmit
       await page.evaluate(() => {
+        const btn = document.querySelector('button.btn-brand-orange, form button[type="submit"]') as HTMLButtonElement;
+        if (btn) {
+          btn.removeAttribute('disabled');
+          btn.disabled = false;
+          btn.classList.remove('mat-mdc-button-disabled', 'mdc-button--disabled');
+          (btn.style as any).pointerEvents = 'auto';
+          btn.click();
+        }
         const form = document.querySelector('form');
         if (form) {
           try {
-            form.requestSubmit();
+            if (btn) form.requestSubmit(btn);
+            else form.requestSubmit();
           } catch (_) {
             try { form.submit(); } catch (_) {}
           }
         }
       });
-      this.logger.log(`[Step 01] Triggered form requestSubmit.`);
+      this.logger.log(`[Step 01] Dispatched DOM button click and form requestSubmit.`);
 
-      await page.waitForTimeout(6000);
+      // Also simulate click using Playwright locator
+      try {
+        const orangeBtn = page.locator('button.btn-brand-orange, form button[type="submit"]').first();
+        await orangeBtn.click({ force: true, timeout: 5000 });
+        this.logger.log(`[Step 01] Clicked Sign In button with Playwright.`);
+      } catch (clickErr: any) {
+        this.logger.log(`[Step 01] Playwright click notice: ${clickErr.message}`);
+      }
+
+      if (applicationId) await this.updateAppStatus(applicationId, 'Submitted login form...');
+
+      // Wait 10 seconds for VFS authentication response & navigation
+      this.logger.log(`[Step 01] Waiting for authentication response...`);
+      await page.waitForTimeout(10000);
       await page.screenshot({ path: '/app/debug-after-login.png' });
       this.logger.log(`[Step 01] Post-login screenshot saved to /app/debug-after-login.png`);
 
       const pageErrors = await page.evaluate(() => {
         const errors: string[] = [];
-        document.querySelectorAll('mat-error, .c-brand-error, .alert, .toast-message, app-notification, .error-message').forEach(el => {
+        document.querySelectorAll('mat-error, .alert, .toast-message, app-notification, .error-message').forEach(el => {
           const txt = el.textContent?.trim();
-          if (txt) errors.push(txt);
+          if (txt && txt !== '*') errors.push(txt);
         });
         return errors;
       });
