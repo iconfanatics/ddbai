@@ -5,10 +5,10 @@ import { PrismaService } from '../prisma/prisma.service.js';
 
 // ============================================================
 // VFS Global Portugal Bangladesh - Cloudflare Turnstile Sitekey
-// This key is static for the VFS BGD→PRT login page.
-// Update if VFS changes it (check network tab for challenges.cloudflare.com requests)
+// Captured live from VFS BGD→PRT challenges.cloudflare.com requests:
+// 0x4AAAAAABhlz7Ei4byodYjs
 // ============================================================
-const VFS_TURNSTILE_SITEKEY = process.env.VFS_TURNSTILE_SITEKEY || '0x4AAAAAAACYaM3U_Dz-4DN1';
+const VFS_TURNSTILE_SITEKEY = process.env.VFS_TURNSTILE_SITEKEY || '0x4AAAAAABhlz7Ei4byodYjs';
 
 @Injectable()
 export class VfsAutomationService {
@@ -19,7 +19,7 @@ export class VfsAutomationService {
   // ============================================================
   // WEBSHARE PROXY ROTATION
   // Fetches a random proxy from your Webshare account via API.
-  // Falls back to the static proxyString if API key is not set.
+  // Prioritizes Portugal (PT) proxies first as requested.
   // ============================================================
   private async getRotatedProxy(staticProxyString: string): Promise<string> {
     const webshareApiKey = process.env.WEBSHARE_API_KEY;
@@ -29,22 +29,38 @@ export class VfsAutomationService {
     }
 
     try {
-      this.logger.log('[Proxy] Fetching random proxy from Webshare API...');
-      // 1st attempt: fast country residential proxies (UAE, Europe, US)
-      let res = await fetch('https://proxy.webshare.io/api/v2/proxy/list/?mode=backbone&page=1&page_size=100&country_code__in=AE,US,GB,DE,NL,FR', {
-        headers: {
-          'Authorization': `Token ${webshareApiKey}`,
-        },
+      this.logger.log('[Proxy] Fetching Portugal (PT) residential proxy from Webshare API...');
+      // 1st priority: Portugal (PT) backbone proxy
+      let res = await fetch('https://proxy.webshare.io/api/v2/proxy/list/?mode=backbone&page=1&page_size=100&country_code__in=PT', {
+        headers: { 'Authorization': `Token ${webshareApiKey}` },
       });
       let data = await res.json() as any;
       let proxies: any[] = data.results || [];
 
-      // 2nd attempt: any backbone proxy if fast country list is empty
+      // 2nd priority: Standard Portugal (PT) proxy without backbone mode
+      if (proxies.length === 0) {
+        this.logger.log('[Proxy] No PT backbone proxies, checking standard PT proxy list...');
+        res = await fetch('https://proxy.webshare.io/api/v2/proxy/list/?page=1&page_size=100&country_code__in=PT', {
+          headers: { 'Authorization': `Token ${webshareApiKey}` },
+        });
+        data = await res.json() as any;
+        proxies = data.results || [];
+      }
+
+      // 3rd priority: If Portugal is unavailable on this package, fallback to nearby European countries
+      if (proxies.length === 0) {
+        this.logger.warn('[Proxy] Portugal (PT) proxies not found in Webshare plan. Falling back to ES,FR,DE,NL,GB...');
+        res = await fetch('https://proxy.webshare.io/api/v2/proxy/list/?mode=backbone&page=1&page_size=100&country_code__in=ES,FR,DE,NL,GB', {
+          headers: { 'Authorization': `Token ${webshareApiKey}` },
+        });
+        data = await res.json() as any;
+        proxies = data.results || [];
+      }
+
+      // 4th priority: Any backbone proxy
       if (proxies.length === 0) {
         res = await fetch('https://proxy.webshare.io/api/v2/proxy/list/?mode=backbone&page=1&page_size=100', {
-          headers: {
-            'Authorization': `Token ${webshareApiKey}`,
-          },
+          headers: { 'Authorization': `Token ${webshareApiKey}` },
         });
         data = await res.json() as any;
         proxies = data.results || [];
@@ -57,12 +73,12 @@ export class VfsAutomationService {
         return staticProxyString;
       }
 
-      // Pick a random proxy from the list
+      // Pick a random proxy from the filtered list
       const randomProxy = proxies[Math.floor(Math.random() * proxies.length)];
       const host = randomProxy.proxy_address || 'p.webshare.io';
       const port = randomProxy.port || 80;
       const proxyUrl = `http://${randomProxy.username}:${randomProxy.password}@${host}:${port}`;
-      this.logger.log(`[Proxy] Selected random Webshare proxy: ${host}:${port} (${randomProxy.username})`);
+      this.logger.log(`[Proxy] Selected Webshare proxy: ${host}:${port} (country: ${randomProxy.country_code || 'N/A'}, user: ${randomProxy.username})`);
       return proxyUrl;
     } catch (e: any) {
       this.logger.warn(`[Proxy] Failed to fetch from Webshare API: ${e.message}. Falling back to static proxy.`);
@@ -305,8 +321,8 @@ export class VfsAutomationService {
       let capturedSitekey: string | null = null;
       page.on('request', (request: any) => {
         const url: string = request.url();
-        // Match sitekey pattern: /rcv0/0x... or /sitekey/0x...
-        const skMatch = url.match(/\/(?:rcv0|sitekey)\/(0x[a-zA-Z0-9_-]+)/);
+        // Match any Turnstile/Challenge sitekey pattern in Cloudflare request URLs
+        const skMatch = url.match(/(0x4[a-zA-Z0-9_-]{10,})/i);
         if (skMatch && !capturedSitekey) {
           capturedSitekey = skMatch[1];
           this.logger.log(`[NET] 🔑 Captured Turnstile sitekey from network: ${capturedSitekey}`);
@@ -528,9 +544,17 @@ export class VfsAutomationService {
               } catch (_) {}
             }
 
+            // Also post Turnstile success message in case scripts listen to window messages
+            try {
+              window.postMessage({ source: 'cloudflare-turnstile', event: 'success', token: t }, '*');
+              window.postMessage({ type: 'cf-turnstile-response', token: t }, '*');
+            } catch (_) {}
+
             // --- 2. ANGULAR IVY DEEP SEARCH ---
             const foundForms: any[] = [];
             const foundComponents: any[] = [];
+            let loginCompInstance: any = null;
+            let captchaCompInstance: any = null;
             const inspectedLViews = new Set<any>();
 
             function inspectLView(lView: any[]) {
@@ -538,7 +562,7 @@ export class VfsAutomationService {
               inspectedLViews.add(lView);
               for (let i = 0; i < lView.length; i++) {
                 const item = lView[i];
-                if (!item || typeof item !== 'object') continue;
+                if (!item || typeof item !== 'object' || item instanceof Node || Array.isArray(item)) continue;
 
                 // Check if item itself is a FormGroup
                 if (item.controls && typeof item.patchValue === 'function') {
@@ -555,37 +579,52 @@ export class VfsAutomationService {
                 if (item.loginForm && item.loginForm.controls && typeof item.loginForm.patchValue === 'function') {
                   if (!foundForms.includes(item.loginForm)) foundForms.push(item.loginForm);
                 }
-                // Check if item looks like a login component
+                // Check if item is AppLoginComponent
                 if (item.loginForm || item.onSubmit || item.login || item.signIn || item.authenticate) {
                   if (!foundComponents.includes(item)) foundComponents.push(item);
+                  if (!loginCompInstance) loginCompInstance = item;
+                }
+                // Check if item is CloudflareCaptchaContainerComponent
+                const constructorName = item.constructor?.name || '';
+                if (constructorName.toLowerCase().includes('captcha') || constructorName.toLowerCase().includes('cloudflare') || item.siteKey || item.widgetId) {
+                  if (!captchaCompInstance) captchaCompInstance = item;
                 }
               }
             }
 
-            // Scan all DOM elements for __ngContext__
+            // Direct check on <app-login> and <app-cloudflare-captcha-container>
+            const loginEl = document.querySelector('app-login') as any;
+            if (loginEl && loginEl.__ngContext__) {
+              const lCtx = Array.isArray(loginEl.__ngContext__) ? loginEl.__ngContext__ : loginEl.__ngContext__.lView;
+              if (Array.isArray(lCtx)) inspectLView(lCtx);
+            }
+
+            const captchaContainerEl = document.querySelector('app-cloudflare-captcha-container') as any;
+            if (captchaContainerEl && captchaContainerEl.__ngContext__) {
+              const cCtx = Array.isArray(captchaContainerEl.__ngContext__) ? captchaContainerEl.__ngContext__ : captchaContainerEl.__ngContext__.lView;
+              if (Array.isArray(cCtx)) inspectLView(cCtx);
+            }
+
+            // Scan all DOM elements directly for __ngContext__
             const allElements = Array.from(document.querySelectorAll('*'));
             for (const el of allElements) {
-              for (const key of Object.keys(el)) {
-                if (key.startsWith('__ngContext__')) {
-                  const ctx = (el as any)[key];
-                  if (Array.isArray(ctx)) {
-                    inspectLView(ctx);
-                  } else if (typeof ctx === 'number') {
-                    let cur = el.parentElement;
-                    while (cur) {
-                      for (const pk of Object.keys(cur)) {
-                        if (pk.startsWith('__ngContext__') && Array.isArray((cur as any)[pk])) {
-                          inspectLView((cur as any)[pk]);
-                          break;
-                        }
-                      }
-                      cur = cur.parentElement;
-                    }
-                  } else if (ctx && typeof ctx === 'object') {
-                    if (Array.isArray(ctx.lView)) inspectLView(ctx.lView);
-                    if (Array.isArray(ctx.raw)) inspectLView(ctx.raw);
+              const ctx = (el as any).__ngContext__;
+              if (!ctx) continue;
+              if (Array.isArray(ctx)) {
+                inspectLView(ctx);
+              } else if (typeof ctx === 'number') {
+                let cur = el.parentElement;
+                while (cur) {
+                  const pCtx = (cur as any).__ngContext__;
+                  if (Array.isArray(pCtx)) {
+                    inspectLView(pCtx);
+                    break;
                   }
+                  cur = cur.parentElement;
                 }
+              } else if (typeof ctx === 'object') {
+                if (Array.isArray(ctx.lView)) inspectLView(ctx.lView);
+                if (Array.isArray(ctx.raw)) inspectLView(ctx.raw);
               }
             }
 
@@ -606,7 +645,56 @@ export class VfsAutomationService {
               }
             }
 
-            // --- 3. PATCH ALL FOUND FORM GROUPS ---
+            // --- 3. PATCH CAPTCHA CONTAINER COMPONENT ---
+            let captchaComponentReport: any = null;
+            if (captchaCompInstance) {
+              captchaComponentReport = {
+                name: captchaCompInstance.constructor?.name,
+                props: Object.keys(captchaCompInstance),
+              };
+              // Set token property
+              for (const p of Object.keys(captchaCompInstance)) {
+                if (p.toLowerCase().includes('token') || p.toLowerCase().includes('captcha') || p.toLowerCase().includes('response')) {
+                  try { captchaCompInstance[p] = t; } catch (_) {}
+                }
+                // If property is an EventEmitter, emit token
+                const val = captchaCompInstance[p];
+                if (val && typeof val.emit === 'function') {
+                  try { val.emit(t); } catch (_) {}
+                  try { val.emit({ token: t, response: t }); } catch (_) {}
+                }
+              }
+              // Call methods on captcha container
+              for (const m of ['onVerify', 'handleSuccess', 'onSuccess', 'setToken', 'resolved', 'callback']) {
+                if (typeof captchaCompInstance[m] === 'function') {
+                  try { captchaCompInstance[m](t); } catch (_) {}
+                }
+              }
+            }
+
+            // --- 4. PATCH LOGIN COMPONENT ---
+            let loginComponentReport: any = null;
+            if (loginCompInstance) {
+              loginComponentReport = {
+                name: loginCompInstance.constructor?.name,
+                props: Object.keys(loginCompInstance),
+                methods: Object.getOwnPropertyNames(Object.getPrototypeOf(loginCompInstance || {})),
+              };
+              // Pass token directly to login component
+              for (const p of Object.keys(loginCompInstance)) {
+                if (p.toLowerCase().includes('token') || p.toLowerCase().includes('captcha')) {
+                  try { loginCompInstance[p] = t; } catch (_) {}
+                }
+              }
+              // Call login component captcha callbacks
+              for (const m of ['onCaptchaSuccess', 'captchaResponse', 'handleCaptcha', 'captchaResolved', 'setCaptchaToken', 'onCaptchaVerify']) {
+                if (typeof loginCompInstance[m] === 'function') {
+                  try { loginCompInstance[m](t); } catch (_) {}
+                }
+              }
+            }
+
+            // --- 5. PATCH ALL FOUND FORM GROUPS ---
             const patchedFormsInfo: any[] = [];
             for (const fg of foundForms) {
               const info: any = {
@@ -647,7 +735,7 @@ export class VfsAutomationService {
               patchedFormsInfo.push(info);
             }
 
-            // --- 4. PREPARE SUBMIT BUTTON & REMOVE OVERLAYS ---
+            // --- 6. PREPARE SUBMIT BUTTON & REMOVE OVERLAYS ---
             document.querySelectorAll('#onetrust-banner-sdk, #onetrust-consent-sdk, .onetrust-pc-dark-filter').forEach(el => el.remove());
 
             const signinBtn = document.querySelector('button.btn-brand-orange, form button[type="submit"]') as HTMLButtonElement;
@@ -673,10 +761,8 @@ export class VfsAutomationService {
             return {
               formsCount: foundForms.length,
               componentsCount: foundComponents.length,
-              components: foundComponents.map(c => ({
-                name: c?.constructor?.name,
-                methods: Object.getOwnPropertyNames(Object.getPrototypeOf(c || {})).filter(m => /login|submit|signin|auth/i.test(m))
-              })),
+              loginComponent: loginComponentReport,
+              captchaComponent: captchaComponentReport,
               patchedForms: patchedFormsInfo,
               customTags,
               formOuterHtml: formEl ? formEl.outerHTML.substring(0, 4000) : 'NO FORM',
@@ -685,10 +771,10 @@ export class VfsAutomationService {
           }, { t: token, email: vfsEmail, pass: vfsPassword });
 
           this.logger.log(`[ANGULAR-FORM] Forms Found: ${angularReport.formsCount}, Components: ${angularReport.componentsCount}`);
+          this.logger.log(`[ANGULAR-FORM] Login Component: ${JSON.stringify(angularReport.loginComponent)}`);
+          this.logger.log(`[ANGULAR-FORM] Captcha Component: ${JSON.stringify(angularReport.captchaComponent)}`);
           this.logger.log(`[ANGULAR-FORM] Patched Details: ${JSON.stringify(angularReport.patchedForms)}`);
-          this.logger.log(`[ANGULAR-FORM] Components: ${JSON.stringify(angularReport.components)}`);
           this.logger.log(`[ANGULAR-FORM] Custom Tags: ${JSON.stringify(angularReport.customTags)}`);
-          this.logger.log(`[ANGULAR-FORM] Form HTML: ${angularReport.formOuterHtml}`);
 
           await page.waitForTimeout(1000);
           this.logger.log(`[Step 01] Token injected and Angular forms patched.`);
@@ -706,24 +792,42 @@ export class VfsAutomationService {
       // Trigger component methods directly if available
       const calledMethod = await page.evaluate(() => {
         let called: string | null = null;
+        // Direct check on app-login element
+        const loginEl = document.querySelector('app-login') as any;
+        if (loginEl && loginEl.__ngContext__) {
+          const lCtx = Array.isArray(loginEl.__ngContext__) ? loginEl.__ngContext__ : loginEl.__ngContext__.lView;
+          if (Array.isArray(lCtx)) {
+            for (const item of lCtx) {
+              if (!item || typeof item !== 'object' || item instanceof Node || Array.isArray(item)) continue;
+              for (const m of ['onSubmit', 'login', 'signIn', 'authenticate', 'onLogin', 'submit']) {
+                if (typeof item[m] === 'function') {
+                  try {
+                    item[m]();
+                    called = `${item.constructor?.name}.${m}`;
+                    return called;
+                  } catch (_) {}
+                }
+              }
+            }
+          }
+        }
+
+        // Scan all DOM elements
         const allElements = Array.from(document.querySelectorAll('*'));
         for (const el of allElements) {
-          for (const key of Object.keys(el)) {
-            if (key.startsWith('__ngContext__')) {
-              const ctx = (el as any)[key];
-              const lView = Array.isArray(ctx) ? ctx : (ctx && Array.isArray(ctx.lView) ? ctx.lView : null);
-              if (lView) {
-                for (const item of lView) {
-                  if (!item || typeof item !== 'object') continue;
-                  for (const m of ['onSubmit', 'login', 'signIn', 'authenticate', 'onLogin', 'submit']) {
-                    if (typeof item[m] === 'function') {
-                      try {
-                        item[m]();
-                        called = `${item.constructor?.name}.${m}`;
-                        return called;
-                      } catch (_) {}
-                    }
-                  }
+          const ctx = (el as any).__ngContext__;
+          if (!ctx) continue;
+          const lView = Array.isArray(ctx) ? ctx : (ctx && Array.isArray(ctx.lView) ? ctx.lView : null);
+          if (lView) {
+            for (const item of lView) {
+              if (!item || typeof item !== 'object' || item instanceof Node || Array.isArray(item)) continue;
+              for (const m of ['onSubmit', 'login', 'signIn', 'authenticate', 'onLogin', 'submit']) {
+                if (typeof item[m] === 'function') {
+                  try {
+                    item[m]();
+                    called = `${item.constructor?.name}.${m}`;
+                    return called;
+                  } catch (_) {}
                 }
               }
             }
