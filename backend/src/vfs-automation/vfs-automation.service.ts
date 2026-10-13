@@ -506,35 +506,127 @@ export class VfsAutomationService {
 
         if (token) {
           this.logger.log(`[Step 01] Injecting Turnstile token into page...`);
-          await page.evaluate((t: string) => {
-            // Method 1: inject hidden input
-            let input = document.querySelector('input[name="cf-turnstile-response"]') as HTMLInputElement;
-            if (!input) {
-              input = document.createElement('input');
-              input.type = 'hidden';
-              input.name = 'cf-turnstile-response';
-              const form = document.querySelector('form');
-              if (form) form.appendChild(input);
-            }
-            input.value = t;
-            input.dispatchEvent(new Event('input', { bubbles: true }));
-            input.dispatchEvent(new Event('change', { bubbles: true }));
+          
+          // Deep injection and Angular FormGroup inspection
+          const angularReport = await page.evaluate((t: string) => {
+            // 1. Inject hidden cf-turnstile-response inputs into all forms and body
+            document.querySelectorAll('input[name="cf-turnstile-response"]').forEach((el: any) => {
+              el.value = t;
+              el.dispatchEvent(new Event('input', { bubbles: true }));
+              el.dispatchEvent(new Event('change', { bubbles: true }));
+            });
 
-            // Method 2: call intercepted callback
-            if (typeof (window as any).__turnstileToken !== 'undefined') {
-              (window as any).__turnstileToken = t;
-            }
-
-            // Method 3: call window.turnstile.execute callback if present
-            try {
-              const widgets = (window as any).__turnstileImpl?._state?.widgets;
-              if (widgets) {
-                Object.values(widgets).forEach((w: any) => {
-                  if (typeof w?.callback === 'function') w.callback(t);
-                });
+            document.querySelectorAll('form').forEach(f => {
+              let inp = f.querySelector('input[name="cf-turnstile-response"]') as HTMLInputElement;
+              if (!inp) {
+                inp = document.createElement('input');
+                inp.type = 'hidden';
+                inp.name = 'cf-turnstile-response';
+                f.appendChild(inp);
               }
-            } catch (_) {}
+              inp.value = t;
+              inp.dispatchEvent(new Event('input', { bubbles: true }));
+              inp.dispatchEvent(new Event('change', { bubbles: true }));
+            });
+
+            // 2. Set any formcontrol containing captcha, turnstile, or token
+            document.querySelectorAll('[formcontrolname], [formControlName]').forEach((el: any) => {
+              const name = (el.getAttribute('formcontrolname') || el.getAttribute('formControlName') || '').toLowerCase();
+              if (name.includes('captcha') || name.includes('turnstile') || name.includes('token') || name.includes('challenge')) {
+                el.value = t;
+                el.dispatchEvent(new Event('input', { bubbles: true }));
+                el.dispatchEvent(new Event('change', { bubbles: true }));
+              }
+            });
+
+            // 3. Check for Angular Component Instance via __ngContext__
+            let compInstance: any = null;
+            const searchEls = [document.querySelector('app-login'), document.querySelector('form'), document.querySelector('app-root')];
+            for (const el of searchEls) {
+              if (!el) continue;
+              for (const key in el) {
+                if (key.startsWith('__ngContext__')) {
+                  const ctx = (el as any)[key];
+                  if (Array.isArray(ctx)) {
+                    for (const item of ctx) {
+                      if (item && typeof item === 'object' && (item.loginForm || item.form || item.onSubmit || item.login)) {
+                        compInstance = item;
+                        break;
+                      }
+                    }
+                  }
+                }
+                if (compInstance) break;
+              }
+              if (compInstance) break;
+            }
+
+            const controlsDebug: any = {};
+            let formPatched = false;
+            let formValidBefore = false;
+            let formValidAfter = false;
+
+            if (compInstance) {
+              const fg = compInstance.loginForm || compInstance.form;
+              if (fg && fg.controls) {
+                formValidBefore = fg.valid;
+                for (const cName in fg.controls) {
+                  const ctrl = fg.controls[cName];
+                  controlsDebug[cName] = {
+                    value: ctrl.value ? (typeof ctrl.value === 'string' && ctrl.value.length > 20 ? ctrl.value.substring(0, 10) + '...' : ctrl.value) : null,
+                    valid: ctrl.valid,
+                    errors: ctrl.errors,
+                    status: ctrl.status,
+                  };
+                  // If control is invalid or is captcha-related, patch the token
+                  if (cName.toLowerCase().includes('captcha') || cName.toLowerCase().includes('turnstile') || !ctrl.valid) {
+                    if (cName.toLowerCase().includes('captcha') || cName.toLowerCase().includes('turnstile') || ctrl.errors?.required) {
+                      try {
+                        ctrl.setValue(t);
+                        ctrl.updateValueAndValidity();
+                        formPatched = true;
+                      } catch (_) {}
+                    }
+                  }
+                }
+                try {
+                  fg.updateValueAndValidity();
+                  formValidAfter = fg.valid;
+                } catch (_) {}
+              }
+            }
+
+            // 4. Try global Turnstile callbacks
+            for (const k of Object.keys(window)) {
+              if (typeof (window as any)[k] === 'function' && (k.toLowerCase().includes('turnstile') || k.toLowerCase().includes('captcha'))) {
+                try { (window as any)[k](t); } catch(_) {}
+              }
+            }
+
+            // 5. Gather form HTML and buttons
+            const formEl = document.querySelector('form');
+            const buttons = Array.from(document.querySelectorAll('button')).map(b => ({
+              text: b.textContent?.trim(),
+              type: b.type,
+              disabled: b.disabled,
+              classes: b.className
+            }));
+
+            return {
+              hasComponent: !!compInstance,
+              formPatched,
+              formValidBefore,
+              formValidAfter,
+              controls: controlsDebug,
+              buttons,
+              formHtml: formEl ? formEl.outerHTML.substring(0, 800) : 'NO FORM'
+            };
           }, token);
+
+          this.logger.log(`[ANGULAR-FORM] Component Found: ${angularReport.hasComponent}, Patched: ${angularReport.formPatched}, Valid: ${angularReport.formValidAfter}`);
+          this.logger.log(`[ANGULAR-FORM] Controls: ${JSON.stringify(angularReport.controls)}`);
+          this.logger.log(`[ANGULAR-FORM] Buttons: ${JSON.stringify(angularReport.buttons)}`);
+          this.logger.log(`[ANGULAR-FORM] Form HTML: ${angularReport.formHtml}`);
 
           await page.waitForTimeout(2000);
           this.logger.log(`[Step 01] Token injected. Waiting for Angular to validate...`);
@@ -555,9 +647,12 @@ export class VfsAutomationService {
       // ==========================================
       // STEP 01d - Submit Login Form
       // ==========================================
-      // Remove disabled from all buttons
+      // Make sure all buttons are enabled
       await page.evaluate(() => {
-        document.querySelectorAll('button').forEach(b => b.removeAttribute('disabled'));
+        document.querySelectorAll('button').forEach(b => {
+          b.removeAttribute('disabled');
+          b.disabled = false;
+        });
       });
       await page.waitForTimeout(500);
 
@@ -565,9 +660,21 @@ export class VfsAutomationService {
         await page.click(loginBtnSelector, { force: true });
         this.logger.log(`[Step 01] Clicked Login Button.`);
       } catch (_) {
-        this.logger.warn(`[Step 01] Could not click login button — trying Enter key.`);
-        await page.keyboard.press('Enter');
+        this.logger.warn(`[Step 01] Could not click login button.`);
       }
+
+      // Also trigger form.requestSubmit() and component login method if needed
+      await page.evaluate(() => {
+        const form = document.querySelector('form');
+        if (form) {
+          try {
+            form.requestSubmit();
+          } catch (_) {
+            try { form.submit(); } catch (_) {}
+          }
+        }
+      });
+      this.logger.log(`[Step 01] Triggered form requestSubmit.`);
 
       await page.waitForTimeout(6000);
       await page.screenshot({ path: '/app/debug-after-login.png' });
