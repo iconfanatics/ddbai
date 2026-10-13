@@ -159,7 +159,7 @@ export class VfsAutomationService {
     vfsPassword: string,
     proxyString: string,
     mediaVideoPath: string | null = null,
-    targetUrl: string = 'https://visa.vfsglobal.com/bgd/en/prt/login',
+    targetUrl: string = process.env.VFS_TARGET_URL || 'https://visa.vfsglobal.com/gnb/en/prt/login',
     applicationId?: string
   ): Promise<boolean> {
     return this.processVfsApplication(vfsEmail, vfsPassword, proxyString, mediaVideoPath, targetUrl, undefined, applicationId);
@@ -177,7 +177,7 @@ export class VfsAutomationService {
     vfsPassword: string,
     proxyString: string,
     mediaVideoPath: string | null = null,
-    targetUrl: string = 'https://visa.vfsglobal.com/bgd/en/prt/login',
+    targetUrl: string = process.env.VFS_TARGET_URL || 'https://visa.vfsglobal.com/gnb/en/prt/login',
     applicationConfig?: any,
     applicationId?: string
   ): Promise<boolean> {

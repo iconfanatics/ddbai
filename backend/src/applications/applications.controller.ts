@@ -12,13 +12,13 @@ export class ApplicationsController {
     const app = await this.applicationsService.findOne(id);
     if (!app) throw new NotFoundException('Application not found');
     
-    // Fire and forget
+    const vfsUrl = process.env.VFS_TARGET_URL || 'https://visa.vfsglobal.com/gnb/en/prt/login';
     this.vfsAutomationService.processVfsApplication(
       app.vfsEmail || '',
       app.vfsPassword || '',
       app.proxy || '',
       null,
-      'https://visa.vfsglobal.com/bgd/en/prt/login',
+      vfsUrl,
       undefined,
       id
     ).catch(e => console.error(e));

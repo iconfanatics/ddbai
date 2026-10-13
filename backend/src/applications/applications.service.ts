@@ -304,12 +304,13 @@ export class ApplicationsService {
            // videoPath = await this.documentsService.downloadMediaToTemp(application.id); 
         }
 
+        const vfsUrl = process.env.VFS_TARGET_URL || 'https://visa.vfsglobal.com/gnb/en/prt/login';
         const success = await this.vfsAutomationService.loginToVFS(
           application.vfsEmail || '',
           application.vfsPassword || '',
           application.proxy || '',
           videoPath,
-          'https://visa.vfsglobal.com/bgd/en/prt/login',
+          vfsUrl,
           application.id
         );
 
