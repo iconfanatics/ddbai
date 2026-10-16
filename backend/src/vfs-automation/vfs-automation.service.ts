@@ -421,21 +421,56 @@ export class VfsAutomationService {
         }
         (window as any).__vfsHookTurnstile = hookTurnstile;
 
-        // Hook document.createElement('script') to catch api.js load event immediately
+        // Synchronous interceptor using dummy Element.
+        // Cloudflare's check: qt = "turnstile" in window && !lu(yt) && !w(yt, Element) && !w(yt, HTMLCollection)
+        // When get() returns an Element, w(yt, Element) is TRUE, so qt is FALSE.
+        // Cloudflare does NOT abort, and instead assigns: window.turnstile = xr
+        // Our setter intercepts xr synchronously before ANY subsequent script can call render!
+        let _realTurnstile: any = null;
+        let dummyElement: any = null;
         try {
-          const origCreate = document.createElement;
-          document.createElement = function (tagName: any, options: any) {
-            const el = origCreate.call(this, tagName, options);
-            if (typeof tagName === 'string' && tagName.toLowerCase() === 'script') {
-              el.addEventListener('load', () => {
-                const t = (window as any).turnstile;
-                if (t && typeof t.render === 'function' && !t.__vfsHooked) {
-                  hookTurnstile(t);
-                }
-              }, true);
+          dummyElement = document.createElement('div');
+          dummyElement.id = 'turnstile';
+        } catch (_) {
+          dummyElement = {};
+        }
+
+        const pendingReady: any[] = [];
+        if (dummyElement && typeof dummyElement === 'object') {
+          dummyElement.ready = function (fn: any) {
+            if (typeof fn === 'function') {
+              if (_realTurnstile && typeof _realTurnstile.ready === 'function') {
+                _realTurnstile.ready(fn);
+              } else {
+                pendingReady.push(fn);
+              }
             }
-            return el;
           };
+        }
+
+        try {
+          Object.defineProperty(window, 'turnstile', {
+            configurable: true,
+            enumerable: true,
+            get() {
+              return _realTurnstile || dummyElement;
+            },
+            set(val) {
+              if (val && typeof val === 'object') {
+                _realTurnstile = hookTurnstile(val);
+                if (pendingReady.length > 0 && typeof val.ready === 'function') {
+                  for (const fn of pendingReady) {
+                    try {
+                      val.ready(fn);
+                    } catch (_) {}
+                  }
+                  pendingReady.length = 0;
+                }
+              } else {
+                _realTurnstile = val;
+              }
+            },
+          });
         } catch (_) {}
 
         // Fast fallback polling interval (runs every 2ms)
