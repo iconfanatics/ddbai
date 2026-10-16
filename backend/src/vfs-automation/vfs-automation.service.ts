@@ -331,12 +331,13 @@ export class VfsAutomationService {
         }
       });
       page.on('pageerror', err => {
-        if (!err.message.includes('about:blank')) {
-          this.logger.warn(`[PAGE-ERROR] ${err.stack || err.message}`);
+        const msg = err.stack || err.message;
+        if (!msg.includes('about:blank') && !msg.includes('clarity.ms')) {
+          this.logger.warn(`[PAGE-ERROR] ${msg}`);
         }
       });
 
-      // Safe non-tampering interceptor to capture Turnstile render callback and options
+      // Synchronous interceptor to capture Turnstile render callback and options
       // Restrict strictly to top-level window (never execute in sandboxed child iframes)
       await page.addInitScript(() => {
         try {
@@ -348,13 +349,14 @@ export class VfsAutomationService {
         (window as any).__vfsTurnstileCallback = null;
         (window as any).__vfsTurnstileOptions = null;
         (window as any).__vfsTurnstileContainer = null;
+        (window as any).__vfsTurnstileWidgetId = null;
         (window as any).__vfsRenderCalls = [];
 
         function hookTurnstileObj(tObj: any) {
-          if (!tObj || tObj.__vfsHooked) return;
-          const origRender = tObj.render;
-          if (typeof origRender === 'function') {
-            tObj.render = function (c: any, opt: any) {
+          if (!tObj || tObj.__vfsHooked) return tObj;
+
+          function wrapRender(origRender: any) {
+            return function (this: any, c: any, opt: any) {
               try {
                 const cDesc = typeof c === 'string' ? c : (c?.id ? `#${c.id}` : (c?.tagName || 'DOM_ELEMENT'));
                 console.warn(`[CAPTURED-TURNSTILE-RENDER] Container: ${cDesc}, Options: ${JSON.stringify(opt)}`);
@@ -367,13 +369,49 @@ export class VfsAutomationService {
               } catch (e: any) {
                 console.warn('[CAPTURED-TURNSTILE-ERROR] ' + e.message);
               }
-              return origRender.apply(this, arguments);
+              const res = origRender.apply(this, arguments);
+              if (res) (window as any).__vfsTurnstileWidgetId = res;
+              return res;
             };
-            tObj.__vfsHooked = true;
           }
+
+          if (typeof tObj.render === 'function') {
+            tObj.render = wrapRender(tObj.render);
+            tObj.__vfsHooked = true;
+          } else {
+            let _origRender: any = undefined;
+            try {
+              Object.defineProperty(tObj, 'render', {
+                configurable: true,
+                enumerable: true,
+                get() {
+                  return _origRender;
+                },
+                set(fn) {
+                  _origRender = wrapRender(fn);
+                  tObj.__vfsHooked = true;
+                },
+              });
+            } catch (_) {}
+          }
+          return tObj;
         }
 
-        // Safe polling interval without Object.defineProperty tampering (fast 20ms checks)
+        let _turnstile: any = undefined;
+        try {
+          Object.defineProperty(window, 'turnstile', {
+            configurable: true,
+            enumerable: true,
+            get() {
+              return _turnstile;
+            },
+            set(val) {
+              _turnstile = hookTurnstileObj(val);
+            },
+          });
+        } catch (_) {}
+
+        // Fast fallback polling interval (runs every 10ms)
         let pollCount = 0;
         const hookTimer = setInterval(() => {
           pollCount++;
@@ -382,7 +420,7 @@ export class VfsAutomationService {
             hookTurnstileObj(t);
           }
           if (pollCount > 1500) clearInterval(hookTimer);
-        }, 20);
+        }, 10);
       });
 
       // =========================================================
