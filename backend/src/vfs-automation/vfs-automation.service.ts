@@ -377,7 +377,7 @@ export class VfsAutomationService {
         }
       });
 
-      // Synchronous interceptor to capture Turnstile render callback, options, and internal state
+      // Synchronous interceptor to capture Turnstile render callback and options
       // Restrict strictly to top-level window (never execute in sandboxed child iframes)
       await page.addInitScript(() => {
         try {
@@ -393,12 +393,8 @@ export class VfsAutomationService {
         (window as any).__vfsTurnstileInternalState = null;
         (window as any).__vfsRenderCalls = [];
 
-        (window as any).__vfsHookTurnstile = function (tObj: any, internalState?: any) {
-          if (internalState) {
-            (window as any).__vfsTurnstileInternalState = internalState;
-          }
+        function hookTurnstile(tObj: any) {
           if (!tObj || tObj.__vfsHooked) return tObj;
-
           const origRender = tObj.render;
           if (typeof origRender === 'function') {
             tObj.render = function (this: any, c: any, opt: any) {
@@ -422,47 +418,36 @@ export class VfsAutomationService {
             tObj.__vfsHooked = true;
           }
           return tObj;
-        };
+        }
+        (window as any).__vfsHookTurnstile = hookTurnstile;
 
-        // Fast fallback polling interval (runs every 5ms)
+        // Hook document.createElement('script') to catch api.js load event immediately
+        try {
+          const origCreate = document.createElement;
+          document.createElement = function (tagName: any, options: any) {
+            const el = origCreate.call(this, tagName, options);
+            if (typeof tagName === 'string' && tagName.toLowerCase() === 'script') {
+              el.addEventListener('load', () => {
+                const t = (window as any).turnstile;
+                if (t && typeof t.render === 'function' && !t.__vfsHooked) {
+                  hookTurnstile(t);
+                }
+              }, true);
+            }
+            return el;
+          };
+        } catch (_) {}
+
+        // Fast fallback polling interval (runs every 2ms)
         let pollCount = 0;
         const hookTimer = setInterval(() => {
           pollCount++;
           const t = (window as any).turnstile;
           if (t && typeof t.render === 'function' && !t.__vfsHooked) {
-            (window as any).__vfsHookTurnstile(t);
+            hookTurnstile(t);
           }
-          if (pollCount > 3000) clearInterval(hookTimer);
-        }, 5);
-      });
-
-      // =========================================================================
-      // Intercept Cloudflare Turnstile api.js to hook window.turnstile synchronously
-      // and capture Turnstile internal widgetMap and msgHandler.
-      // =========================================================================
-      await page.route('**/*challenges.cloudflare.com/**/api.js*', async (route) => {
-        try {
-          const response = await route.fetch();
-          let body = await response.text();
-          if (body.includes('window.turnstile=xr')) {
-            body = body.replaceAll(
-              'window.turnstile=xr',
-              'window.turnstile=(window.__vfsHookTurnstile?window.__vfsHookTurnstile(xr,y):xr)'
-            );
-            this.logger.log(`[Turnstile Route] 🎯 Successfully patched api.js with Turnstile hook & internal state!`);
-          }
-          await route.fulfill({
-            response,
-            body,
-            headers: {
-              ...response.headers(),
-              'content-type': 'application/javascript; charset=UTF-8',
-            },
-          });
-        } catch (err: any) {
-          this.logger.warn(`[Turnstile Route] Error patching api.js: ${err.message}`);
-          await route.continue();
-        }
+          if (pollCount > 5000) clearInterval(hookTimer);
+        }, 2);
       });
 
       // =========================================================
