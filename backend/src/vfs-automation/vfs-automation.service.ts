@@ -377,7 +377,7 @@ export class VfsAutomationService {
         }
       });
 
-      // Synchronous interceptor to capture Turnstile render callback and options
+      // Synchronous interceptor to capture Turnstile render callback, options, and internal state
       // Restrict strictly to top-level window (never execute in sandboxed child iframes)
       await page.addInitScript(() => {
         try {
@@ -390,18 +390,24 @@ export class VfsAutomationService {
         (window as any).__vfsTurnstileOptions = null;
         (window as any).__vfsTurnstileContainer = null;
         (window as any).__vfsTurnstileWidgetId = null;
+        (window as any).__vfsTurnstileInternalState = null;
         (window as any).__vfsRenderCalls = [];
 
-        function hookTurnstileObj(tObj: any) {
+        (window as any).__vfsHookTurnstile = function (tObj: any, internalState?: any) {
+          if (internalState) {
+            (window as any).__vfsTurnstileInternalState = internalState;
+          }
           if (!tObj || tObj.__vfsHooked) return tObj;
 
-          function wrapRender(origRender: any) {
-            return function (this: any, c: any, opt: any) {
+          const origRender = tObj.render;
+          if (typeof origRender === 'function') {
+            tObj.render = function (this: any, c: any, opt: any) {
               try {
                 const cDesc = typeof c === 'string' ? c : (c?.id ? `#${c.id}` : (c?.tagName || 'DOM_ELEMENT'));
                 console.warn(`[CAPTURED-TURNSTILE-RENDER] Container: ${cDesc}, Options: ${JSON.stringify(opt)}`);
                 (window as any).__vfsTurnstileContainer = c;
                 (window as any).__vfsTurnstileOptions = opt;
+                if (!Array.isArray((window as any).__vfsRenderCalls)) (window as any).__vfsRenderCalls = [];
                 (window as any).__vfsRenderCalls.push({ container: c, options: opt });
                 if (opt && typeof opt.callback === 'function') {
                   (window as any).__vfsTurnstileCallback = opt.callback;
@@ -413,54 +419,50 @@ export class VfsAutomationService {
               if (res) (window as any).__vfsTurnstileWidgetId = res;
               return res;
             };
-          }
-
-          if (typeof tObj.render === 'function') {
-            tObj.render = wrapRender(tObj.render);
             tObj.__vfsHooked = true;
-          } else {
-            let _origRender: any = undefined;
-            try {
-              Object.defineProperty(tObj, 'render', {
-                configurable: true,
-                enumerable: true,
-                get() {
-                  return _origRender;
-                },
-                set(fn) {
-                  _origRender = wrapRender(fn);
-                  tObj.__vfsHooked = true;
-                },
-              });
-            } catch (_) {}
           }
           return tObj;
-        }
+        };
 
-        let _turnstile: any = undefined;
-        try {
-          Object.defineProperty(window, 'turnstile', {
-            configurable: true,
-            enumerable: true,
-            get() {
-              return _turnstile;
-            },
-            set(val) {
-              _turnstile = hookTurnstileObj(val);
-            },
-          });
-        } catch (_) {}
-
-        // Fast fallback polling interval (runs every 10ms)
+        // Fast fallback polling interval (runs every 5ms)
         let pollCount = 0;
         const hookTimer = setInterval(() => {
           pollCount++;
           const t = (window as any).turnstile;
           if (t && typeof t.render === 'function' && !t.__vfsHooked) {
-            hookTurnstileObj(t);
+            (window as any).__vfsHookTurnstile(t);
           }
-          if (pollCount > 1500) clearInterval(hookTimer);
-        }, 10);
+          if (pollCount > 3000) clearInterval(hookTimer);
+        }, 5);
+      });
+
+      // =========================================================================
+      // Intercept Cloudflare Turnstile api.js to hook window.turnstile synchronously
+      // and capture Turnstile internal widgetMap and msgHandler.
+      // =========================================================================
+      await page.route('**/*challenges.cloudflare.com/**/api.js*', async (route) => {
+        try {
+          const response = await route.fetch();
+          let body = await response.text();
+          if (body.includes('window.turnstile=xr')) {
+            body = body.replaceAll(
+              'window.turnstile=xr',
+              'window.turnstile=(window.__vfsHookTurnstile?window.__vfsHookTurnstile(xr,y):xr)'
+            );
+            this.logger.log(`[Turnstile Route] 🎯 Successfully patched api.js with Turnstile hook & internal state!`);
+          }
+          await route.fulfill({
+            response,
+            body,
+            headers: {
+              ...response.headers(),
+              'content-type': 'application/javascript; charset=UTF-8',
+            },
+          });
+        } catch (err: any) {
+          this.logger.warn(`[Turnstile Route] Error patching api.js: ${err.message}`);
+          await route.continue();
+        }
       });
 
       // =========================================================
@@ -698,6 +700,9 @@ export class VfsAutomationService {
             const report: any = {
               turnstileHookFound: !!(window as any).__vfsTurnstileCallback,
               turnstileOptionsFound: !!(window as any).__vfsTurnstileOptions,
+              internalStateFound: false,
+              widgetMapSize: 0,
+              internalMsgDispatched: false,
               cbInvoked: false,
               cbMethod: null,
               cbError: null,
@@ -748,6 +753,52 @@ export class VfsAutomationService {
               }
             }
 
+            // --- 1b. INVOKE CLOUDFLARE TURNSTILE INTERNAL MSG HANDLER & WIDGET MAP ---
+            const state = (window as any).__vfsTurnstileInternalState;
+            if (state) {
+              report.internalStateFound = true;
+              if (state.widgetMap) {
+                report.widgetMapSize = state.widgetMap.size;
+                for (const [wId, widget] of state.widgetMap.entries()) {
+                  if (widget && typeof widget.cbSuccess === 'function') {
+                    invokeInZone(widget.cbSuccess, t, `widgetMap[${wId}].cbSuccess`);
+                  }
+                  if (typeof state.internalMsgHandler === 'function') {
+                    try {
+                      state.internalMsgHandler({
+                        source: 'cloudflare-challenge',
+                        widgetId: wId,
+                        event: 'complete',
+                        token: t,
+                      });
+                      report.internalMsgDispatched = true;
+                    } catch (e: any) {
+                      report.cbError = `internalMsgHandler: ${e.message}`;
+                    }
+                  }
+                }
+              }
+            }
+
+            // Also search DOM for widget ID if internalMsgHandler wasn't called yet
+            if (!report.internalMsgDispatched && state && typeof state.internalMsgHandler === 'function') {
+              const cfInput = document.querySelector('input[id*="cf-chl-widget-"]');
+              if (cfInput && cfInput.id) {
+                const m = cfInput.id.match(/cf-chl-widget-([a-zA-Z0-9_-]+)_response/);
+                if (m && m[1]) {
+                  try {
+                    state.internalMsgHandler({
+                      source: 'cloudflare-challenge',
+                      widgetId: m[1],
+                      event: 'complete',
+                      token: t,
+                    });
+                    report.internalMsgDispatched = true;
+                  } catch (_) {}
+                }
+              }
+            }
+
             // Global callbacks on window (e.g. data-callback)
             for (const k of Object.keys(window)) {
               if (typeof (window as any)[k] === 'function' &&
@@ -777,9 +828,18 @@ export class VfsAutomationService {
                 container.appendChild(inp);
               }
               inp.value = t;
+              inp.setAttribute('value', t);
               inp.dispatchEvent(new Event('input', { bubbles: true }));
               inp.dispatchEvent(new Event('change', { bubbles: true }));
               report.injectedInputsCount++;
+
+              // Also check any widget-specific inputs
+              container.querySelectorAll('input[id*="cf-chl-widget-"]').forEach((wInp: any) => {
+                wInp.value = t;
+                wInp.setAttribute('value', t);
+                wInp.dispatchEvent(new Event('input', { bubbles: true }));
+                wInp.dispatchEvent(new Event('change', { bubbles: true }));
+              });
             };
 
             document.querySelectorAll('form').forEach(f => injectInputTo(f));
@@ -1097,11 +1157,15 @@ export class VfsAutomationService {
       // ==========================================
       // Monitor network for login API call
       let loginApiTriggered = false;
-      const onLoginResponse = (res: any) => {
+      const onLoginResponse = async (res: any) => {
         const u = res.url();
         if (u.includes('/login') || u.includes('/auth') || u.includes('/authenticate') || u.includes('user/login')) {
           loginApiTriggered = true;
-          this.logger.log(`[Step 01] 🎯 VFS Login API responded: ${res.status()} ${u}`);
+          let bodyText = '';
+          try {
+            bodyText = await res.text();
+          } catch (_) {}
+          this.logger.log(`[Step 01] 🎯 VFS Login API responded: ${res.status()} ${u} -> Body: ${bodyText.substring(0, 300)}`);
         }
       };
       page.on('response', onLoginResponse);
@@ -1202,18 +1266,27 @@ export class VfsAutomationService {
       // ==========================================
       this.logger.log(`[Step 02] Waiting for Dashboard...`);
       if (applicationId) await this.updateAppStatus(applicationId, 'Waiting for Dashboard...');
+      const dashboardBtnSelector = 'button:has-text("Start New Booking"), button:has-text("Start new booking"), button:has-text("New Booking"), a:has-text("Start New Booking"), a:has-text("Start new booking"), a:has-text("New Booking"), button:has-text("Book Appointment"), .btn-brand-orange:has-text("Booking")';
       try {
-        await page.waitForSelector('button:has-text("Start New Booking")', { timeout: 45000 });
-        await page.click('button:has-text("Start New Booking")');
+        await page.waitForSelector(dashboardBtnSelector, { timeout: 45000 });
+        const startBtn = page.locator(dashboardBtnSelector).first();
+        await startBtn.click();
         this.logger.log(`[Step 02] ✅ Logged in! Clicked "Start New Booking"`);
         if (applicationId) await this.updateAppStatus(applicationId, 'Logged In Successfully!');
       } catch (_) {
+        const currentUrl = page.url();
         const title2 = await page.title();
         const html2 = await page.evaluate(() => document.body.innerHTML);
-        this.logger.warn(`[Step 02] Dashboard not found. Page title: "${title2}"`);
+        this.logger.warn(`[Step 02] Dashboard button not found. URL: ${currentUrl}, Page title: "${title2}"`);
         this.logger.log(`[DEBUG-STEP-2] HTML: ${html2.substring(0, 3000)}`);
         await page.screenshot({ path: '/app/debug-dashboard-failed.png' });
-        if (applicationId) await this.updateAppStatus(applicationId, `Login failed — stuck at: ${title2}`);
+
+        if (currentUrl.includes('/dashboard') || currentUrl.includes('/application') || currentUrl.includes('/booking')) {
+          this.logger.log(`[Step 02] ✅ Logged in! Reached URL: ${currentUrl}`);
+          if (applicationId) await this.updateAppStatus(applicationId, 'Logged In Successfully!');
+        } else {
+          if (applicationId) await this.updateAppStatus(applicationId, `Login failed — stuck at: ${title2}`);
+        }
       }
 
       // ==========================================
