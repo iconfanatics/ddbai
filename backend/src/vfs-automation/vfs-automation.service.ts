@@ -332,7 +332,7 @@ export class VfsAutomationService {
       });
       page.on('pageerror', err => {
         if (!err.message.includes('about:blank')) {
-          this.logger.warn(`[PAGE-ERROR] ${err.message}`);
+          this.logger.warn(`[PAGE-ERROR] ${err.stack || err.message}`);
         }
       });
 
@@ -351,7 +351,7 @@ export class VfsAutomationService {
         (window as any).__vfsRenderCalls = [];
 
         function hookTurnstileObj(tObj: any) {
-          if (!tObj || tObj.__vfsHooked) return tObj;
+          if (!tObj || tObj.__vfsHooked) return;
           const origRender = tObj.render;
           if (typeof origRender === 'function') {
             tObj.render = function (c: any, opt: any) {
@@ -371,34 +371,18 @@ export class VfsAutomationService {
             };
             tObj.__vfsHooked = true;
           }
-          return tObj;
         }
 
-        // Intercept via getter/setter on window.turnstile
-        let _turnstile: any = (window as any).turnstile;
-        try {
-          Object.defineProperty(window, 'turnstile', {
-            configurable: true,
-            enumerable: true,
-            get() {
-              return _turnstile;
-            },
-            set(val) {
-              _turnstile = hookTurnstileObj(val);
-            },
-          });
-        } catch (_) {}
-
-        // Fallback polling interval (clean up once hooked or after 30s)
+        // Safe polling interval without Object.defineProperty tampering (fast 20ms checks)
         let pollCount = 0;
         const hookTimer = setInterval(() => {
           pollCount++;
-          if ((window as any).turnstile && !(window as any).turnstile.__vfsHooked) {
-            hookTurnstileObj((window as any).turnstile);
-            clearInterval(hookTimer);
+          const t = (window as any).turnstile;
+          if (t && typeof t.render === 'function' && !t.__vfsHooked) {
+            hookTurnstileObj(t);
           }
-          if (pollCount > 300) clearInterval(hookTimer);
-        }, 100);
+          if (pollCount > 1500) clearInterval(hookTimer);
+        }, 20);
       });
 
       // =========================================================
@@ -701,6 +685,7 @@ export class VfsAutomationService {
 
             document.querySelectorAll('form').forEach(f => injectInputTo(f));
             document.querySelectorAll('app-cloudflare-captcha-container').forEach(c => injectInputTo(c));
+            document.querySelectorAll('[appcloudflarerecaptcha]').forEach(c => injectInputTo(c));
             document.querySelectorAll('.cf-turnstile, #widgetId, [id*="cf-"], [id*="turnstile"]').forEach(w => injectInputTo(w));
 
             const capturedContainer = (window as any).__vfsTurnstileContainer;
@@ -712,6 +697,18 @@ export class VfsAutomationService {
                 injectInputTo(capturedContainer);
               }
             }
+
+            // Dispatch events directly on captcha directive and containers
+            document.querySelectorAll('[appcloudflarerecaptcha], app-cloudflare-captcha-container').forEach(el => {
+              try {
+                el.dispatchEvent(new CustomEvent('captchaSuccess', { detail: t, bubbles: true }));
+                el.dispatchEvent(new CustomEvent('success', { detail: t, bubbles: true }));
+                el.dispatchEvent(new CustomEvent('resolved', { detail: t, bubbles: true }));
+                el.dispatchEvent(new CustomEvent('captchaResponse', { detail: t, bubbles: true }));
+                el.dispatchEvent(new Event('change', { bubbles: true }));
+                el.dispatchEvent(new Event('input', { bubbles: true }));
+              } catch (_) {}
+            });
 
             // Post message for any listeners
             try {
@@ -728,6 +725,24 @@ export class VfsAutomationService {
               visitedViews.add(view);
               if (Array.isArray(view)) lViewList.push(view);
             };
+
+            // Scan root elements directly
+            const rootCandidates: any[] = [
+              document.querySelector('app-root'),
+              document.querySelector('form'),
+              document.querySelector('app-cloudflare-captcha-container'),
+              document.querySelector('[appcloudflarerecaptcha]'),
+            ];
+            if (typeof (window as any).getAllAngularRootElements === 'function') {
+              try { rootCandidates.push(...(window as any).getAllAngularRootElements()); } catch (_) {}
+            }
+            rootCandidates.forEach(r => {
+              if (r && r.__ngContext__) {
+                if (Array.isArray(r.__ngContext__)) addLView(r.__ngContext__);
+                else if (r.__ngContext__.lView && Array.isArray(r.__ngContext__.lView)) addLView(r.__ngContext__.lView);
+                else if (r.__ngContext__.raw && Array.isArray(r.__ngContext__.raw)) addLView(r.__ngContext__.raw);
+              }
+            });
 
             // Scan all DOM elements and walk up parents to collect LViews
             document.querySelectorAll('*').forEach((el: any) => {
@@ -771,13 +786,18 @@ export class VfsAutomationService {
               if (item.form && item.form.controls && typeof item.form.patchValue === 'function') {
                 if (!foundForms.includes(item.form)) foundForms.push(item.form);
               }
+              if (item._form && item._form.controls && typeof item._form.patchValue === 'function') {
+                if (!foundForms.includes(item._form)) foundForms.push(item._form);
+              }
 
               // Check item's properties for nested FormGroups
               for (const k of Object.keys(item)) {
-                const val = item[k];
-                if (val && typeof val === 'object' && val.controls && typeof val.patchValue === 'function') {
-                  if (!foundForms.includes(val)) foundForms.push(val);
-                }
+                try {
+                  const val = item[k];
+                  if (val && typeof val === 'object' && val.controls && typeof val.patchValue === 'function') {
+                    if (!foundForms.includes(val)) foundForms.push(val);
+                  }
+                } catch (_) {}
               }
 
               // Check if Login Component
@@ -1018,11 +1038,17 @@ export class VfsAutomationService {
           btn.disabled = false;
           btn.classList.remove('mat-mdc-button-disabled', 'mdc-button--disabled');
           (btn.style as any).pointerEvents = 'auto';
+          btn.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+          btn.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true }));
+          btn.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
           btn.click();
         }
         const form = document.querySelector('form');
         if (form) {
+          form.classList.remove('ng-invalid');
+          form.classList.add('ng-valid');
           try {
+            form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
             if (btn) form.requestSubmit(btn);
             else form.requestSubmit();
           } catch (_) {
@@ -1040,6 +1066,13 @@ export class VfsAutomationService {
       } catch (clickErr: any) {
         this.logger.log(`[Step 01] Playwright click notice: ${clickErr.message}`);
       }
+
+      // Fallback submit via keyboard Enter on password field
+      try {
+        await page.locator(passwordSelector).focus();
+        await page.keyboard.press('Enter');
+        this.logger.log(`[Step 01] Dispatched Enter key on password input.`);
+      } catch (_) {}
 
       if (applicationId) await this.updateAppStatus(applicationId, 'Submitted login form...');
 
