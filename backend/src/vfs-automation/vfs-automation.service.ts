@@ -13,6 +13,7 @@ const VFS_TURNSTILE_SITEKEY = process.env.VFS_TURNSTILE_SITEKEY || '0x4AAAAAABhl
 @Injectable()
 export class VfsAutomationService {
   private readonly logger = new Logger(VfsAutomationService.name);
+  private static readonly rateLimitedProxies = new Set<string>();
 
   constructor(private prisma: PrismaService) {}
 
@@ -73,12 +74,14 @@ export class VfsAutomationService {
         return staticProxyString;
       }
 
-      // Pick a random proxy from the filtered list
-      const randomProxy = proxies[Math.floor(Math.random() * proxies.length)];
+      // Filter out temporarily rate-limited proxies
+      const cleanProxies = proxies.filter(p => !VfsAutomationService.rateLimitedProxies.has(`${p.proxy_address || 'p.webshare.io'}:${p.port || 80}`));
+      const candidateList = cleanProxies.length > 0 ? cleanProxies : proxies;
+      const randomProxy = candidateList[Math.floor(Math.random() * candidateList.length)];
       const host = randomProxy.proxy_address || 'p.webshare.io';
       const port = randomProxy.port || 80;
       const proxyUrl = `http://${randomProxy.username}:${randomProxy.password}@${host}:${port}`;
-      this.logger.log(`[Proxy] Selected Webshare proxy: ${host}:${port} (country: ${randomProxy.country_code || 'N/A'}, user: ${randomProxy.username})`);
+      this.logger.log(`[Proxy] Selected Webshare proxy: ${host}:${port} (country: ${randomProxy.country_code || 'N/A'}, user: ${randomProxy.username}, available clean pool: ${candidateList.length}/${proxies.length})`);
       return proxyUrl;
     } catch (e: any) {
       this.logger.warn(`[Proxy] Failed to fetch from Webshare API: ${e.message}. Falling back to static proxy.`);
@@ -181,8 +184,45 @@ export class VfsAutomationService {
     applicationConfig?: any,
     applicationId?: string
   ): Promise<boolean> {
-    this.logger.log(`Starting VFS automation for ${vfsEmail} on ${targetUrl}`);
-    if (applicationId) await this.updateAppStatus(applicationId, 'Starting browser...');
+    const maxRetries = 3;
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      this.logger.log(`Starting VFS automation for ${vfsEmail} on ${targetUrl} (Attempt ${attempt}/${maxRetries})`);
+      if (applicationId) await this.updateAppStatus(applicationId, `Starting session (${attempt}/${maxRetries})...`);
+
+      const success = await this.runSingleSession(
+        vfsEmail,
+        vfsPassword,
+        proxyString,
+        mediaVideoPath,
+        targetUrl,
+        applicationConfig,
+        applicationId,
+        attempt,
+        maxRetries
+      );
+
+      if (success) return true;
+
+      if (attempt < maxRetries) {
+        this.logger.warn(`[VFS] Attempt ${attempt} did not succeed. Rotating proxy and retrying in 2 seconds...`);
+        if (applicationId) await this.updateAppStatus(applicationId, `Rotating proxy (${attempt + 1}/${maxRetries})...`);
+        await new Promise(r => setTimeout(r, 2000));
+      }
+    }
+    return false;
+  }
+
+  private async runSingleSession(
+    vfsEmail: string,
+    vfsPassword: string,
+    proxyString: string,
+    mediaVideoPath: string | null = null,
+    targetUrl: string = process.env.VFS_TARGET_URL || 'https://visa.vfsglobal.com/gnb/en/prt/login',
+    applicationConfig?: any,
+    applicationId?: string,
+    attempt: number = 1,
+    maxRetries: number = 3
+  ): Promise<boolean> {
     let browser: Browser | null = null;
 
     try {
@@ -472,6 +512,27 @@ export class VfsAutomationService {
       const pageTitle = await page.title();
       this.logger.log(`[Step 01] PAGE TITLE IS: "${pageTitle}"`);
       this.logger.log(`[Step 01] Screenshot saved to /app/debug-login.png`);
+
+      const isRateLimited =
+        pageTitle.toLowerCase().includes('unable to progress') ||
+        pageTitle.toLowerCase().includes('one hour') ||
+        pageTitle.toLowerCase().includes('closed all your browser') ||
+        pageTitle.toLowerCase().includes('blocked') ||
+        pageTitle.toLowerCase().includes('access denied') ||
+        pageTitle.includes('429');
+
+      if (isRateLimited) {
+        if (proxyConfig?.server) {
+          try {
+            const u = new URL(proxyConfig.server);
+            VfsAutomationService.rateLimitedProxies.add(`${u.hostname}:${u.port}`);
+            this.logger.warn(`[Proxy] Added ${u.hostname}:${u.port} to temporary rate-limited exclusion list.`);
+          } catch (_) {}
+        }
+        this.logger.warn(`[Step 01] ⚠️ Proxy IP is rate-limited / blocked (429) by VFS. Title: "${pageTitle}"`);
+        if (applicationId) await this.updateAppStatus(applicationId, 'Proxy IP rate-limited (429) — rotating proxy...');
+        throw new Error(`VFS_RATE_LIMITED_429: Proxy IP is temporarily blocked by VFS Global.`);
+      }
 
       // Accept cookies
       try {
@@ -1173,14 +1234,14 @@ export class VfsAutomationService {
 
       return true;
     } catch (error: any) {
-      this.logger.error(`VFS Automation failed: ${error.message}`, error.stack);
-      if (applicationId) await this.updateAppStatus(applicationId, 'Failed / Error');
+      this.logger.error(`VFS Automation session failed: ${error.message}`, error.stack);
+      if (applicationId && attempt === maxRetries) await this.updateAppStatus(applicationId, 'Failed / Error');
       return false;
     } finally {
       if (browser) {
         await browser.close();
         this.logger.log(`Browser closed.`);
-        if (applicationId) await this.updateAppStatus(applicationId, 'Finished');
+        if (applicationId && attempt === maxRetries) await this.updateAppStatus(applicationId, 'Finished');
       }
     }
   }
